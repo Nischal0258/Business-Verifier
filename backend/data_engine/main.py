@@ -1,0 +1,168 @@
+"""Main async orchestrator for the Business Verification pipeline."""
+
+import asyncio
+import logging
+from typing import Any, Dict, List, Tuple
+
+from .fetchers import get_financials, get_registry_data
+from .models import CompanyReport
+from .summarizer import summarize_history
+from .verification import verify_company
+
+logger = logging.getLogger(__name__)
+
+
+async def generate_full_report(company_name: str) -> CompanyReport:
+    """Orchestrate the full verification pipeline for a given company.
+
+    This function concurrently fetches registry and financial data,
+    runs the verification algorithm, and synthesises a company history.
+    All data is sourced from real APIs (Yahoo Finance, web search).
+
+    Parameters
+    ----------
+    company_name:
+        The target company name or Yahoo Finance ticker.
+
+    Returns
+    -------
+    CompanyReport
+        Validated Pydantic model containing verification status, score,
+        turnover data, and company history.
+    """
+    logger.info("Starting full report generation for '%s'", company_name)
+
+    try:
+        # Fetch registry and financial data concurrently
+        registry_data, financial_data = await _fetch_parallel(company_name)
+
+        # Use the real company name from registry data if available
+        real_name = registry_data.get("company_name", company_name)
+
+        # Determine verification status
+        is_verified, verification_score = verify_company(registry_data, financial_data)
+
+        # Build raw context string for summarizer
+        raw_context = _build_raw_context(real_name, registry_data, financial_data)
+
+        # Get the real company description from registry data
+        company_description = registry_data.get("description")
+
+        # Summarize (async, with real data fallback)
+        company_history = await summarize_history(raw_context, company_description)
+
+        report = CompanyReport(
+            company_name=real_name,
+            is_verified=is_verified,
+            verification_score=verification_score,
+            turnover_data=financial_data,
+            company_history=company_history,
+            jurisdiction=registry_data.get("jurisdiction") or registry_data.get("country"),
+            incorporation_date=registry_data.get("registration_date"),
+        )
+
+        logger.info(
+            "Completed report for '%s' (verified=%s, score=%d, revenue_years=%d)",
+            real_name, is_verified, verification_score, len(financial_data)
+        )
+        return report
+
+    except Exception as exc:
+        logger.exception("Pipeline crashed for '%s': %s. Returning safe fallback report.", company_name, exc)
+        return CompanyReport(
+            company_name=company_name,
+            is_verified=False,
+            verification_score=0,
+            turnover_data=[],
+            company_history="Company history unavailable due to pipeline error.",
+        )
+
+
+async def _fetch_parallel(company_name: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Run registry and financial fetches concurrently.
+
+    Parameters
+    ----------
+    company_name:
+        Company name or ticker to look up.
+
+    Returns
+    -------
+    tuple
+        ``(registry_data, financial_data)``
+    """
+    registry_task = asyncio.create_task(get_registry_data(company_name))
+    financial_task = asyncio.create_task(get_financials(company_name))
+
+    registry_data = await registry_task
+    financial_data = await financial_task
+
+    return registry_data, financial_data
+
+
+def _build_raw_context(
+    company_name: str,
+    registry_data: Dict[str, Any],
+    financial_data: List[Dict[str, Any]],
+) -> str:
+    """Assemble a plain-text context blob for the LLM summarizer.
+
+    Parameters
+    ----------
+    company_name:
+        The company identifier.
+    registry_data:
+        Registry metadata dictionary.
+    financial_data:
+        Revenue records.
+
+    Returns
+    -------
+    str
+        Combined context string.
+    """
+    lines = [
+        f"Company: {company_name}",
+        f"Status: {registry_data.get('status', 'unknown')}",
+    ]
+
+    # Add real metadata if available
+    if registry_data.get("country"):
+        lines.append(f"Country: {registry_data['country']}")
+    if registry_data.get("industry"):
+        lines.append(f"Industry: {registry_data['industry']}")
+    if registry_data.get("sector"):
+        lines.append(f"Sector: {registry_data['sector']}")
+    if registry_data.get("employees"):
+        lines.append(f"Employees: {registry_data['employees']:,}")
+    if registry_data.get("website"):
+        lines.append(f"Website: {registry_data['website']}")
+    if registry_data.get("market_cap"):
+        mc = registry_data["market_cap"]
+        if mc >= 1_000_000_000_000:
+            lines.append(f"Market Cap: ${mc/1_000_000_000_000:.2f}T")
+        elif mc >= 1_000_000_000:
+            lines.append(f"Market Cap: ${mc/1_000_000_000:.2f}B")
+        elif mc >= 1_000_000:
+            lines.append(f"Market Cap: ${mc/1_000_000:.2f}M")
+    if registry_data.get("registration_date"):
+        lines.append(f"Registered: {registry_data['registration_date']}")
+
+    if financial_data:
+        lines.append("\nRevenue History:")
+        for record in financial_data[:5]:
+            rev = record.get("revenue", 0)
+            if rev > 0:
+                if rev >= 1_000_000_000:
+                    lines.append(f"  {record['year']}: ${rev/1_000_000_000:.2f}B")
+                elif rev >= 1_000_000:
+                    lines.append(f"  {record['year']}: ${rev/1_000_000:.2f}M")
+                else:
+                    lines.append(f"  {record['year']}: ${rev:,.2f}")
+            else:
+                note = record.get("note", "No data")
+                lines.append(f"  {record['year']}: {note}")
+    else:
+        lines.append("\nNo revenue data available (company may be private).")
+
+    return "\n".join(lines)
