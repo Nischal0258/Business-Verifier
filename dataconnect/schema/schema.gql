@@ -1,0 +1,41 @@
+type User @table {
+  email: String!
+  createdAt: Timestamp!
+  displayName: String!
+  photoUrl: String
+}
+
+type Business @table {
+  owner: User
+  name: String!
+  industry: String!
+  createdAt: Timestamp!
+  description: String
+  website: String
+  address: String
+}
+
+type VerificationRequest @table {
+  requester: User
+  business: Business
+  requestedAt: Timestamp!
+  status: String!
+  notes: String
+}
+
+type VerificationReport @table {
+  verificationRequest: VerificationRequest
+  business: Business
+  generatedAt: Timestamp!
+  reportUrl: String!
+  summaryText: String
+  verificationScore: Int
+}
+
+type AISummary @table {
+  business: Business
+  generatedAt: Timestamp!
+  summaryText: String!
+  keyInsights: [String]
+  confidenceScore: Int
+}

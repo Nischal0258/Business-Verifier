@@ -57,8 +57,11 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up Business Verification API...")
     
-    # Validate OpenAI API key
-    await validate_openai_key()
+    # Validate OpenAI API key (non-blocking)
+    try:
+        asyncio.create_task(validate_openai_key())
+    except Exception as e:
+        logger.warning(f"Failed to initiate OpenAI key validation: {e}")
     
     # Initialize database
     await init_db()
@@ -274,6 +277,16 @@ async def verify_company_pdf(company_name: str, db: AsyncSession = Depends(get_d
             error=f"PDF generation failed: {str(e)}",
             metadata=None
         )
+
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "message": "Welcome to the Business Verification & Analytics API",
+        "docs": "/docs",
+        "health": "/health"
+    }
 
 
 @app.get("/health")

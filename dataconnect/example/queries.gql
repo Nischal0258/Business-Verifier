@@ -1,0 +1,53 @@
+query ListAllBusinesses @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public as it only retrieves public business information.") {
+  businesses {
+    id
+    name
+    industry
+    website
+    address
+    description
+    owner {
+      id
+      displayName
+    }
+  }
+}
+
+query MyBusinesses @auth(level: USER, insecureReason: "This operation is safe to expose to all logged in users, as it filters results by the authenticated user's ID.") {
+  businesses(where: { ownerId: { eq_expr: "auth.uid" } }) {
+    id
+    name
+    industry
+    createdAt
+  }
+}
+
+mutation CreateBusiness($name: String!, $industry: String!, $description: String, $website: String, $address: String) @auth(level: USER) {
+  business_insert(
+    data: {
+      name: $name,
+      industry: $industry,
+      description: $description,
+      website: $website,
+      address: $address,
+      ownerId_expr: "auth.uid",
+      createdAt_expr: "request.time"
+    }
+  ) {
+    id
+  }
+}
+
+mutation RequestBusinessVerification($businessId: UUID!, $notes: String) @auth(level: USER) {
+  verificationRequest_insert(
+    data: {
+      businessId: $businessId,
+      requesterId_expr: "auth.uid",
+      requestedAt_expr: "request.time",
+      status: "PENDING",
+      notes: $notes
+    }
+  ) {
+    id
+  }
+}

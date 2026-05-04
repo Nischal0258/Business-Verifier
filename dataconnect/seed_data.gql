@@ -1,0 +1,85 @@
+mutation CreateDemoData @transaction @auth(level: USER, insecureReason: "This operation is for seeding demo data and should be restricted in production.") {
+  user_insertMany(data: [
+    {
+      id: "a0000000-0000-4000-8000-000000000001",
+      email: "owner1@example.com",
+      displayName: "Business Owner One",
+      createdAt: "2024-01-01T00:00:00Z"
+    },
+    {
+      id: "a0000000-0000-4000-8000-000000000002",
+      email: "owner2@example.com",
+      displayName: "Business Owner Two",
+      createdAt: "2024-01-02T00:00:00Z"
+    }
+  ])
+  business_insertMany(data: [
+    {
+      id: "b0000000-0000-4000-8000-000000000001",
+      ownerId: "a0000000-0000-4000-8000-000000000001",
+      name: "The Coffee Bean",
+      industry: "Food & Beverage",
+      description: "A cozy coffee shop serving artisanal coffee and pastries.",
+      website: "https://thecoffeebean.com",
+      address: "123 Main St, Anytown",
+      createdAt: "2024-01-01T00:00:00Z"
+    },
+    {
+      id: "b0000000-0000-4000-8000-000000000002",
+      ownerId: "a0000000-0000-4000-8000-000000000002",
+      name: "Tech Solutions Inc.",
+      industry: "Technology",
+      description: "Providing innovative IT solutions for small businesses.",
+      website: "https://techsolutions.com",
+      address: "456 Tech Ave, Techville",
+      createdAt: "2024-01-02T00:00:00Z"
+    }
+  ])
+  aISummary_insertMany(data: [
+    {
+      id: "c0000000-0000-4000-8000-000000000001",
+      businessId: "b0000000-0000-4000-8000-000000000001",
+      summaryText: "Coffee Bean's Q1 performance shows strong customer loyalty and growth in organic coffee sales.",
+      keyInsights: ["Strong customer loyalty", "Growth in organic sales", "Potential for new product lines"],
+      confidenceScore: 90,
+      generatedAt: "2024-03-31T10:00:00Z"
+    },
+    {
+      id: "c0000000-0000-4000-8000-000000000002",
+      businessId: "b0000000-0000-4000-8000-000000000002",
+      summaryText: "Tech Solutions is expanding its cloud services, driven by increasing demand for remote work infrastructure.",
+      keyInsights: ["Cloud service expansion", "High demand for remote infrastructure", "Market leadership in niche"],
+      confidenceScore: 95,
+      generatedAt: "2024-03-31T11:00:00Z"
+    }
+  ])
+  verificationRequest_insertMany(data: [
+    {
+      id: "d0000000-0000-4000-8000-000000000001",
+      requesterId: "a0000000-0000-4000-8000-000000000001",
+      businessId: "b0000000-0000-4000-8000-000000000001",
+      requestedAt: "2024-04-01T09:00:00Z",
+      status: "PENDING",
+      notes: "Initial request for business verification."
+    },
+    {
+      id: "d0000000-0000-4000-8000-000000000002",
+      requesterId: "a0000000-0000-4000-8000-000000000002",
+      businessId: "b0000000-0000-4000-8000-000000000002",
+      requestedAt: "2024-04-01T10:00:00Z",
+      status: "APPROVED",
+      notes: "All documents submitted and verified."
+    }
+  ])
+  verificationReport_insertMany(data: [
+    {
+      id: "e0000000-0000-4000-8000-000000000001",
+      verificationRequestId: "d0000000-0000-4000-8000-000000000002",
+      businessId: "b0000000-0000-4000-8000-000000000002",
+      generatedAt: "2024-04-05T15:00:00Z",
+      reportUrl: "https://reports.example.com/tech-solutions-verification.pdf",
+      summaryText: "Comprehensive verification report for Tech Solutions Inc., confirming business legitimacy and operational status.",
+      verificationScore: 98
+    }
+  ])
+}
