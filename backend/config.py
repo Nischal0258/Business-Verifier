@@ -11,7 +11,7 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
-    openai_api_key: str
+    openai_api_key: str = ""
     cors_origins: Union[List[str], str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001"]
     database_url: str = "sqlite+aiosqlite:///./data/business_verify.db"
 

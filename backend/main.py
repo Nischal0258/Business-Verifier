@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -26,7 +27,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def validate_openai_key():
+async def _validate_openai_key():
     """Validate OpenAI API key on startup."""
     import openai
     
@@ -54,22 +55,19 @@ async def validate_openai_key():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
-    # Startup
     logger.info("Starting up Business Verification API...")
-    
-    # Validate OpenAI API key (non-blocking)
-    try:
-        asyncio.create_task(validate_openai_key())
-    except Exception as e:
-        logger.warning(f"Failed to initiate OpenAI key validation: {e}")
-    
-    # Initialize database
+
+    if not settings.openai_api_key:
+        logger.warning("OPENAI_API_KEY not set — OpenAI features will be disabled")
+    else:
+        try:
+            asyncio.create_task(_validate_openai_key())
+        except Exception as e:
+            logger.warning(f"Failed to initiate OpenAI key validation: {e}")
+
     await init_db()
-    
     logger.info("Startup complete. API ready to accept requests.")
     yield
-    
-    # Shutdown
     logger.info("Shutting down...")
     await close_db()
     logger.info("Shutdown complete.")
