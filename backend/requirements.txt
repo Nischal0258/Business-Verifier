@@ -12,4 +12,4 @@ duckduckgo-search>=6.3.0
 beautifulsoup4>=4.12.0
 yfinance>=0.2.48
 httpx>=0.27.0
-aiohttp>=3.9.0
+ aiohttp>=3.9.0
