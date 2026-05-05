@@ -30,26 +30,17 @@ logger = logging.getLogger(__name__)
 async def _validate_openai_key():
     """Validate OpenAI API key on startup."""
     import openai
-    
+
     if not settings.openai_api_key:
-        raise RuntimeError(
-            "OPENAI_API_KEY environment variable is required but not set. "
-            "Please set it in your .env file or environment variables."
-        )
-    
-    # Test the key with a simple request
+        logger.warning("OPENAI_API_KEY not set — OpenAI features will be disabled")
+        return
+
     try:
         client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
-        # Make a minimal request to validate the key
         await client.models.list()
         logger.info("OpenAI API key validated successfully")
-    except openai.AuthenticationError:
-        raise RuntimeError(
-            "Invalid OPENAI_API_KEY. Please check your API key and try again."
-        )
     except Exception as e:
-        logger.warning(f"Could not fully validate OpenAI key: {e}")
-        # Don't fail startup for network issues, but log the warning
+        logger.warning(f"Could not validate OpenAI key: {e}. OpenAI features may be limited.")
 
 
 @asynccontextmanager
@@ -57,14 +48,7 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     logger.info("Starting up Business Verification API...")
 
-    if not settings.openai_api_key:
-        logger.warning("OPENAI_API_KEY not set — OpenAI features will be disabled")
-    else:
-        try:
-            asyncio.create_task(_validate_openai_key())
-        except Exception as e:
-            logger.warning(f"Failed to initiate OpenAI key validation: {e}")
-
+    asyncio.create_task(_validate_openai_key())
     await init_db()
     logger.info("Startup complete. API ready to accept requests.")
     yield
