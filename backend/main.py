@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import sys
+import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
@@ -19,12 +21,22 @@ from pdf_generator import create_pdf, PDFGenerationError
 from data_engine import generate_full_report
 from data_engine.models import CompanyReport
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
+
+try:
+    logger.info("Testing logger - startup initiated")
+    logger.info(f"Python version: {sys.version}")
+    logger.info(f"Database URL: {settings.database_url}")
+    logger.info(f"CORS origins: {settings.cors_origins}")
+except Exception as e:
+    print(f"ERROR during module import: {e}", file=sys.stderr)
+    traceback.print_exc()
+    sys.exit(1)
 
 
 async def _validate_openai_key():
@@ -48,10 +60,17 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     logger.info("Starting up Business Verification API...")
 
-    asyncio.create_task(_validate_openai_key())
-    await init_db()
-    logger.info("Startup complete. API ready to accept requests.")
+    try:
+        asyncio.create_task(_validate_openai_key())
+        await init_db()
+        logger.info("Startup complete. API ready to accept requests.")
+    except Exception as e:
+        logger.error(f"Startup error: {e}")
+        traceback.print_exc()
+        raise
+
     yield
+
     logger.info("Shutting down...")
     await close_db()
     logger.info("Shutdown complete.")
