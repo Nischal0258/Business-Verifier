@@ -3,9 +3,15 @@ from typing import Dict
 import logging
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from weasyprint import HTML
 
 logger = logging.getLogger(__name__)
+
+_weasyprint_available = False
+try:
+    from weasyprint import HTML
+    _weasyprint_available = True
+except ImportError as e:
+    logger.warning(f"WeasyPrint not available: {e}. PDF generation will be disabled.")
 
 # Initialize Jinja2 environment
 env = Environment(
@@ -17,16 +23,19 @@ env = Environment(
 def create_pdf(company_data: Dict) -> bytes:
     """
     Generate a PDF report from company data using Jinja2 template and WeasyPrint.
-    
+
     Args:
         company_data: Dictionary containing company verification data
-        
+
     Returns:
         PDF as bytes
-        
+
     Raises:
-        Exception: If PDF generation fails
+        PDFGenerationError: If PDF generation fails
     """
+    if not _weasyprint_available:
+        raise PDFGenerationError("PDF generation is not available. WeasyPrint is not installed.")
+
     try:
         # Load template
         template = env.get_template("report.html")
