@@ -16,6 +16,7 @@ import HistoryCard from "@/components/dashboard/HistoryCard";
 import FeatureCards from "@/components/dashboard/FeatureCards";
 import ActivityFeed from "@/components/dashboard/ActivityFeed";
 import InteractiveEffects from "@/components/layout/InteractiveEffects";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { motion, AnimatePresence, useInView } from "framer-motion";
 import Lenis from "lenis";
 
@@ -29,7 +30,7 @@ const placeholderSuggestions = [
   "Risk assessment for OpenAI...",
 ];
 
-export default function DashboardPage() {
+function DashboardContent() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -82,9 +83,16 @@ export default function DashboardPage() {
       const result = await fetchCompanyData(trimmed);
       setData(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
+      const errorObj = err as { message?: string; retryable?: boolean };
+      setError(errorObj?.message || "An unexpected error occurred.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRetry = () => {
+    if (query.trim()) {
+      handleSearch();
     }
   };
 
@@ -112,15 +120,16 @@ export default function DashboardPage() {
     setPdfLoading(true);
     try {
       await downloadCompanyPdf(data.company_name);
-    } catch {
-      // silent fail
+    } catch (err) {
+      const errorObj = err as { message?: string };
+      setError(errorObj?.message || "Failed to download PDF. Please try again.");
     } finally {
       setPdfLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#000000] text-white selection:bg-white selection:text-black font-sans antialiased overflow-x-hidden">
+    <div className="min-h-screen bg-background text-foreground selection:bg-accent-primary-muted selection:text-foreground font-sans antialiased overflow-x-hidden">
       <InteractiveEffects />
 
       {/* ── Fixed Navigation ── */}
@@ -460,20 +469,28 @@ export default function DashboardPage() {
               className="flex-1 flex flex-col items-center justify-center p-10 text-center py-40"
             >
               <span className="text-rose-400/60 font-mono text-[9px] uppercase tracking-[0.5em] mb-8">
-                Access_Denied
+                {error.includes("Unable to connect") || error.includes("Network") ? "Connection_Error" : error.includes("timeout") ? "Timeout_Error" : "Access_Denied"}
               </span>
-              <h2 className="text-4xl md:text-5xl font-bold mb-12 max-w-lg tracking-tighter leading-none">
+              <h2 className="text-4xl md:text-5xl font-bold mb-8 max-w-lg tracking-tighter leading-none">
                 {error}
               </h2>
-              <button
-                onClick={() => {
-                  setError(null);
-                  setQuery("");
-                }}
-                className="px-10 py-4 rounded-full border border-white/[0.06] text-[10px] font-mono uppercase tracking-[0.2em] hover:bg-white hover:text-black transition-all duration-500 cursor-pointer"
-              >
-                Reset_Session
-              </button>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setQuery("");
+                  }}
+                  className="px-10 py-4 rounded-full border border-white/[0.06] text-[10px] font-mono uppercase tracking-[0.2em] hover:bg-white hover:text-black transition-all duration-500 cursor-pointer"
+                >
+                  Reset_Session
+                </button>
+                <button
+                  onClick={handleRetry}
+                  className="px-10 py-4 rounded-full border border-white/[0.06] text-[10px] font-mono uppercase tracking-[0.2em] hover:bg-white hover:text-black transition-all duration-500 cursor-pointer"
+                >
+                  Retry
+                </button>
+              </div>
             </motion.div>
           ) : data ? (
             /* ── Results State ── */
@@ -636,5 +653,13 @@ export default function DashboardPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <ProtectedRoute fallbackPath="/">
+      <DashboardContent />
+    </ProtectedRoute>
   );
 }

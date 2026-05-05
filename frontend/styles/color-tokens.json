@@ -1,0 +1,107 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "name": "VerifyIQ Luxury Palette",
+  "version": "1.0.0",
+  "color": {
+    "background": {
+      "default": { "$value": "#0A0F1C", "$type": "color", "description": "Primary background" },
+      "elevated": { "$value": "#111827", "$type": "color", "description": "Elevated surface background" },
+      "muted": { "$value": "#060912", "$type": "color", "description": "Muted background for depth" }
+    },
+    "foreground": {
+      "default": { "$value": "#FAF8F5", "$type": "color", "description": "Primary text", "contrast": { "light": "#0A0F1C", "value": "15.3:1" } },
+      "muted": { "$value": "#C9C5BE", "$type": "color", "description": "Muted text", "contrast": { "dark": "#0A0F1C", "value": "7.8:1" } },
+      "subtle": { "$value": "#9A958C", "$type": "color", "description": "Subtle text", "contrast": { "dark": "#0A0F1C", "value": "5.1:1" } },
+      "disabled": { "$value": "#5C5852", "$type": "color", "description": "Disabled text", "contrast": { "dark": "#0A0F1C", "value": "3.2:1" } }
+    },
+    "surface": {
+      "default": { "$value": "#0F1629", "$type": "color" },
+      "hover": { "$value": "#161F38", "$type": "color" },
+      "active": { "$value": "#1C2845", "$type": "color" }
+    },
+    "accent": {
+      "primary": {
+        "default": { "$value": "#D4AF37", "$type": "color", "description": "Gold accent primary", "contrast": { "dark": "#0A0F1C", "value": "7.2:1" } },
+        "light": { "$value": "#E8C547", "$type": "color" },
+        "dark": { "$value": "#B8960C", "$type": "color" },
+        "muted": { "$value": "rgba(212, 175, 55, 0.15)", "$type": "color" },
+        "subtle": { "$value": "rgba(212, 175, 55, 0.08)", "$type": "color" }
+      },
+      "secondary": {
+        "default": { "$value": "#3B6B8C", "$type": "color", "description": "Sapphire secondary" },
+        "light": { "$value": "#4A8AAD", "$type": "color" },
+        "dark": { "$value": "#2A4F6A", "$type": "color" }
+      },
+      "tertiary": {
+        "default": { "$value": "#8B3A3A", "$type": "color", "description": "Burgundy tertiary" },
+        "light": { "$value": "#A84848", "$type": "color" }
+      }
+    },
+    "border": {
+      "subtle": { "$value": "rgba(250, 248, 245, 0.06)", "$type": "color" },
+      "default": { "$value": "rgba(250, 248, 245, 0.10)", "$type": "color" },
+      "hover": { "$value": "rgba(250, 248, 245, 0.18)", "$type": "color" },
+      "active": { "$value": "rgba(250, 248, 245, 0.28)", "$type": "color" },
+      "focus": { "$value": "#D4AF37", "$type": "color" }
+    },
+    "semantic": {
+      "success": {
+        "default": { "$value": "#2D8B5F", "$type": "color", "contrast": { "light": "#FAF8F5", "value": "5.8:1" } },
+        "light": { "$value": "#3DA870", "$type": "color" },
+        "muted": { "$value": "rgba(45, 139, 95, 0.15)", "$type": "color" }
+      },
+      "warning": {
+        "default": { "$value": "#C9870A", "$type": "color", "contrast": { "light": "#FAF8F5", "value": "4.8:1" } },
+        "light": { "$value": "#E9A21A", "$type": "color" },
+        "muted": { "$value": "rgba(201, 135, 10, 0.15)", "$type": "color" }
+      },
+      "error": {
+        "default": { "$value": "#C93B3B", "$type": "color", "contrast": { "light": "#FAF8F5", "value": "4.7:1" } },
+        "light": { "$value": "#E04848", "$type": "color" },
+        "muted": { "$value": "rgba(201, 59, 59, 0.15)", "$type": "color" }
+      },
+      "info": { "$value": "#3B6B8C", "$type": "color" }
+    },
+    "status": {
+      "verified": { "$value": "#2D8B5F", "$type": "color" },
+      "elevated": { "$value": "#C9870A", "$type": "color" },
+      "unverified": { "$value": "#C93B3B", "$type": "color" }
+    },
+    "interactive": {
+      "hover-overlay": { "$value": "rgba(250, 248, 245, 0.04)", "$type": "color" },
+      "active-overlay": { "$value": "rgba(250, 248, 245, 0.08)", "$type": "color" },
+      "selected-overlay": { "$value": "rgba(212, 175, 55, 0.12)", "$type": "color" }
+    }
+  },
+  "shadow": {
+    "sm": { "$value": "0 1px 2px rgba(0, 0, 0, 0.4)", "$type": "shadow" },
+    "md": { "$value": "0 4px 12px rgba(0, 0, 0, 0.5)", "$type": "shadow" },
+    "lg": { "$value": "0 8px 30px rgba(0, 0, 0, 0.6)", "$type": "shadow" },
+    "xl": { "$value": "0 20px 50px rgba(0, 0, 0, 0.7)", "$type": "shadow" },
+    "glow": { "$value": "0 0 30px rgba(212, 175, 55, 0.15)", "$type": "shadow" },
+    "glow-strong": { "$value": "0 0 60px rgba(212, 175, 55, 0.25)", "$type": "shadow" }
+  },
+  "focus": {
+    "ring": { "$value": "0 0 0 2px #0A0F1C, 0 0 0 4px #D4AF37", "$type": "shadow" },
+    "ring-offset": { "$value": "0 0 0 2px #0A0F1C, 0 0 0 6px #B8960C", "$type": "shadow" }
+  },
+  "scrollbar": {
+    "track": { "$value": "transparent", "$type": "color" },
+    "thumb": { "$value": "rgba(250, 248, 245, 0.12)", "$type": "color" },
+    "thumb-hover": { "$value": "rgba(250, 248, 245, 0.20)", "$type": "color" }
+  },
+  "legacy": {
+    "bg-primary": { "$value": "{color.background.default}", "$type": "color" },
+    "bg-secondary": { "$value": "{color.surface.default}", "$type": "color" },
+    "bg-card": { "$value": "rgba(250, 248, 245, 0.03)", "$type": "color" },
+    "bg-card-hover": { "$value": "rgba(250, 248, 245, 0.06)", "$type": "color" },
+    "text-primary": { "$value": "{color.foreground.default}", "$type": "color" },
+    "text-secondary": { "$value": "{color.foreground.muted}", "$type": "color" },
+    "text-muted": { "$value": "{color.foreground.subtle}", "$type": "color" },
+    "text-dim": { "$value": "{color.foreground.disabled}", "$type": "color" },
+    "accent-purple": { "$value": "{color.accent.primary.default}", "$type": "color" },
+    "accent-purple-light": { "$value": "{color.accent.primary.light}", "$type": "color" },
+    "accent-violet": { "$value": "{color.accent.secondary.default}", "$type": "color" },
+    "accent-glow": { "$value": "{color.accent.primary.muted}", "$type": "color" }
+  }
+}

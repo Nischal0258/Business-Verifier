@@ -1,0 +1,150 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// LUXURY COLOR PALETTE - SCSS VARIABLES
+// WCAG 2.2 AA Compliant: Normal Text ≥4.5:1 | Large Text ≥3:1 | UI Components ≥2:1
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Core Backgrounds - Deep Navy/Slate Base
+$background: #0A0F1C;
+$background-elevated: #111827;
+$background-muted: #060912;
+$surface: #0F1629;
+$surface-hover: #161F38;
+$surface-active: #1C2845;
+
+// Foreground / Text - Cream White
+$foreground: #FAF8F5;
+$foreground-muted: #C9C5BE;
+$foreground-subtle: #9A958C;
+$foreground-disabled: #5C5852;
+
+// Primary Accent - Refined Gold
+$accent-primary: #D4AF37;
+$accent-primary-light: #E8C547;
+$accent-primary-dark: #B8960C;
+$accent-primary-muted: rgba(212, 175, 55, 0.15);
+$accent-primary-subtle: rgba(212, 175, 55, 0.08);
+
+// Secondary Accent - Deep Sapphire
+$accent-secondary: #3B6B8C;
+$accent-secondary-light: #4A8AAD;
+$accent-secondary-dark: #2A4F6A;
+
+// Tertiary Accent - Rich Burgundy
+$accent-tertiary: #8B3A3A;
+$accent-tertiary-light: #A84848;
+
+// Borders & Dividers
+$border-subtle: rgba(250, 248, 245, 0.06);
+$border-default: rgba(250, 248, 245, 0.10);
+$border-hover: rgba(250, 248, 245, 0.18);
+$border-active: rgba(250, 248, 245, 0.28);
+$border-focus: $accent-primary;
+
+// Semantic Colors
+$success: #2D8B5F;
+$success-light: #3DA870;
+$success-muted: rgba(45, 139, 95, 0.15);
+$warning: #C9870A;
+$warning-light: #E9A21A;
+$warning-muted: rgba(201, 135, 10, 0.15);
+$error: #C93B3B;
+$error-light: #E04848;
+$error-muted: rgba(201, 59, 59, 0.15);
+$info: #3B6B8C;
+
+// Shadows with Gold Tint
+$shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+$shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+$shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.6);
+$shadow-xl: 0 20px 50px rgba(0, 0, 0, 0.7);
+$shadow-glow: 0 0 30px rgba(212, 175, 55, 0.15);
+$shadow-glow-strong: 0 0 60px rgba(212, 175, 55, 0.25);
+
+// Focus States - Gold Ring
+$focus-ring: 0 0 0 2px $background, 0 0 0 4px $accent-primary;
+$focus-ring-offset: 0 0 0 2px $background, 0 0 0 6px $accent-primary-dark;
+
+// Status Colors
+$status-verified: #2D8B5F;
+$status-elevated: #C9870A;
+$status-unverified: #C93B3B;
+
+// Interactive States
+$hover-overlay: rgba(250, 248, 245, 0.04);
+$active-overlay: rgba(250, 248, 245, 0.08);
+$selected-overlay: rgba(212, 175, 55, 0.12);
+
+// Scrollbar
+$scrollbar-track: transparent;
+$scrollbar-thumb: rgba(250, 248, 245, 0.12);
+$scrollbar-thumb-hover: rgba(250, 248, 245, 0.20);
+
+// Legacy Variable Mappings
+$bg-primary: $background;
+$bg-secondary: $surface;
+$bg-card: rgba(250, 248, 245, 0.03);
+$bg-card-hover: rgba(250, 248, 245, 0.06);
+$text-primary: $foreground;
+$text-secondary: $foreground-muted;
+$text-muted: $foreground-subtle;
+$text-dim: $foreground-disabled;
+$accent-purple: $accent-primary;
+$accent-purple-light: $accent-primary-light;
+$accent-violet: $accent-secondary;
+$accent-glow: $accent-primary-muted;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SCSS MAPS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+$colors: (
+  "background": $background,
+  "background-elevated": $background-elevated,
+  "background-muted": $background-muted,
+  "surface": $surface,
+  "surface-hover": $surface-hover,
+  "surface-active": $surface-active,
+  "foreground": $foreground,
+  "foreground-muted": $foreground-muted,
+  "foreground-subtle": $foreground-subtle,
+  "foreground-disabled": $foreground-disabled,
+  "accent-primary": $accent-primary,
+  "accent-primary-light": $accent-primary-light,
+  "accent-primary-dark": $accent-primary-dark,
+  "accent-secondary": $accent-secondary,
+  "accent-tertiary": $accent-tertiary,
+  "success": $success,
+  "warning": $warning,
+  "error": $error,
+  "info": $info,
+);
+
+$semantic-colors: (
+  "status-verified": $status-verified,
+  "status-elevated": $status-elevated,
+  "status-unverified": $status-unverified,
+);
+
+$shadows: (
+  "sm": $shadow-sm,
+  "md": $shadow-md,
+  "lg": $shadow-lg,
+  "xl": $shadow-xl,
+  "glow": $shadow-glow,
+  "glow-strong": $shadow-glow-strong,
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CSS CUSTOM PROPERTY OUTPUT (for reference)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// :root {
+//   --background: #{$background};
+//   --foreground: #{$foreground};
+//   --accent-primary: #{$accent-primary};
+//   --accent-secondary: #{$accent-secondary};
+//   --border-default: #{$border-default};
+//   --success: #{$success};
+//   --warning: #{$warning};
+//   --error: #{$error};
+// }

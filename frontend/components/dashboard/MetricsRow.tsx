@@ -17,13 +17,13 @@ export default function MetricsRow({ data }: MetricsRowProps) {
 
   const riskDot =
     data.verification_score >= 80
-      ? "bg-emerald-500"
+      ? "bg-success"
       : data.verification_score >= 50
-        ? "bg-amber-500"
-        : "bg-rose-500";
+        ? "bg-warning"
+        : "bg-error";
 
   const statusText = data.is_verified ? "Verified" : "Unverified";
-  const statusDot = data.is_verified ? "bg-emerald-500" : "bg-rose-500";
+  const statusDot = data.is_verified ? "bg-success" : "bg-error";
 
   const metrics = [
     {

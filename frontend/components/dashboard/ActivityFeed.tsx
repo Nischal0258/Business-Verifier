@@ -50,9 +50,9 @@ const recentActivity: ActivityItem[] = [
 ];
 
 const statusConfig = {
-  verified: { dot: "bg-emerald-500", shadow: "shadow-[0_0_8px_#10b981]", label: "VERIFIED" },
-  elevated: { dot: "bg-amber-500", shadow: "shadow-[0_0_8px_#f59e0b]", label: "RISK_ELEVATED" },
-  unverified: { dot: "bg-rose-500", shadow: "shadow-[0_0_8px_#f43f5e]", label: "UNVERIFIED" },
+  verified: { dot: "bg-success", shadow: "shadow-[0_0_8px_var(--success)]", label: "VERIFIED" },
+  elevated: { dot: "bg-warning", shadow: "shadow-[0_0_8px_var(--warning)]", label: "RISK_ELEVATED" },
+  unverified: { dot: "bg-error", shadow: "shadow-[0_0_8px_var(--error)]", label: "UNVERIFIED" },
 };
 
 const containerVariants = {

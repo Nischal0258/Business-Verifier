@@ -60,7 +60,7 @@ function ParticleGlobe({ scrollYProgress }: { scrollYProgress: any }) {
       <Points ref={pointsRef} positions={positions} stride={3} frustumCulled={false}>
         <PointMaterial
           transparent
-          color="#f59e0b" // Amber
+          color="#D4AF37"
           size={0.018}
           sizeAttenuation={true}
           depthWrite={false}
@@ -71,7 +71,7 @@ function ParticleGlobe({ scrollYProgress }: { scrollYProgress: any }) {
       {/* Inner Wireframe Globe */}
       <Sphere ref={sphereRef} args={[2.3, 32, 32]}>
         <meshBasicMaterial 
-          color="#ea580c" // Orange
+          color="#B8960C"
           wireframe 
           transparent 
           opacity={0.08} 
@@ -82,7 +82,7 @@ function ParticleGlobe({ scrollYProgress }: { scrollYProgress: any }) {
       {/* Core Glow */}
       <Sphere args={[2.0, 16, 16]}>
         <meshBasicMaterial 
-          color="#f59e0b"
+          color="#D4AF37"
           transparent 
           opacity={0.03} 
           blending={THREE.AdditiveBlending}
@@ -96,7 +96,7 @@ export default function CentralDesign3D() {
   const { scrollYProgress } = useScroll();
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-0 bg-transparent flex items-center justify-center overflow-hidden">
+    <div className="fixed inset-0 pointer-events-none z-0 bg-transparent flex items-center justify-center overflow-hidden globe-container">
       <div className="w-full h-full max-w-[1200px] max-h-[1200px] opacity-60">
         <Canvas camera={{ position: [0, 0, 6], fov: 60 }} gl={{ antialias: true, alpha: true }}>
           <ambientLight intensity={0.5} />

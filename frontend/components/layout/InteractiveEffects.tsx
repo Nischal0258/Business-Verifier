@@ -78,8 +78,8 @@ export default function InteractiveEffects() {
           background: useTransform(
             [glowX, glowY],
             ([x, y]) => `
-              radial-gradient(1200px circle at ${x}px ${y}px, rgba(255,255,255,0.04), transparent 80%),
-              radial-gradient(600px circle at ${x}px ${y}px, rgba(255,255,255,0.015), transparent 60%)
+              radial-gradient(1200px circle at ${x}px ${y}px, var(--accent-primary-muted), transparent 80%),
+              radial-gradient(600px circle at ${x}px ${y}px, var(--accent-primary-subtle), transparent 60%)
             `
           ),
         }}
@@ -90,7 +90,7 @@ export default function InteractiveEffects() {
         className="fixed inset-0 pointer-events-none z-[1]"
         style={{
           backgroundImage:
-            "linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)",
+            "linear-gradient(var(--border-subtle) 1px, transparent 1px), linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px)",
           backgroundSize: "120px 120px",
           maskImage: useTransform(
             [glowX, glowY],

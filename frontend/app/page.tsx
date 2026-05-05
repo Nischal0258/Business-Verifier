@@ -326,15 +326,14 @@ function CTASection() {
           Join thousands of companies using VerifyIQ to make smarter, data-driven decisions. No credit card required.
         </motion.p>
 
-        <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={inView ? { opacity: 1, y: 0, scale: 1 } : {}} transition={{ duration: 0.6, delay: 0.3 }}
-          className="flex items-center justify-center gap-4">
-          <a href="/dashboard" className="btn-primary-pill py-4 px-8 text-base">
-            Get Started Free <ArrowRight className="w-4 h-4" />
-          </a>
-          <button className="btn-outline-pill py-4 px-8 text-base">
-            Talk to Sales
-          </button>
-        </motion.div>
+        <motion.div initial={{ opacity: 0, y: 20, scale: 0.98 }} animate={inView ? { opacity: 1, y: 0, scale: 1 } : {}} transition={{ duration: 0.7, delay: 0.8, ease: [0.16, 1, 0.3, 1] }}
+              className="flex items-center justify-center gap-4"
+            >
+              <a href="/dashboard" className="glass-nav flex items-center gap-3 py-4 px-8 rounded-xl text-base font-semibold transition-all duration-300">
+                <span>Get Started</span>
+                <ArrowRight className="w-4 h-4" />
+              </a>
+            </motion.div>
 
         {/* Trust bar */}
         <motion.div initial={{ opacity: 0 }} animate={inView ? { opacity: 1 } : {}} transition={{ duration: 0.5, delay: 0.5 }}

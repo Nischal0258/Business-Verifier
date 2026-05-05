@@ -1,10 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 import { ArrowRight, X, Mail, Lock, User, Eye, EyeOff, ShieldCheck, Play } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { useAuth } from "@/lib/auth-context";
 
 interface AnimatedHeroProps {
   onSearch: (query: string) => void;
@@ -20,11 +22,19 @@ function AuthModal({
   onClose: () => void;
   onSwitch: () => void;
 }) {
+  const router = useRouter();
+  const { user } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const handleAuthSuccess = useCallback(() => {
+    if (user) {
+      router.push("/dashboard");
+    }
+  }, [router, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,15 +44,27 @@ function AuthModal({
     try {
       if (mode === "login") {
         await signInWithEmailAndPassword(auth, email, password);
-        // Successful login
-        window.location.href = "/dashboard";
       } else {
         await createUserWithEmailAndPassword(auth, email, password);
-        // Successful signup
-        window.location.href = "/dashboard";
       }
+      handleAuthSuccess();
     } catch (err: any) {
-      setError(err.message || "An error occurred during authentication.");
+      const errorCode = err?.code;
+      let errorMessage = err?.message || "An error occurred during authentication.";
+
+      if (errorCode === "auth/user-not-found" || errorCode === "auth/wrong-password") {
+        errorMessage = "Invalid email or password.";
+      } else if (errorCode === "auth/email-already-in-use") {
+        errorMessage = "An account with this email already exists.";
+      } else if (errorCode === "auth/weak-password") {
+        errorMessage = "Password should be at least 6 characters.";
+      } else if (errorCode === "auth/invalid-email") {
+        errorMessage = "Invalid email address.";
+      } else if (errorCode === "auth/network-request-failed") {
+        errorMessage = "Network error. Please check your connection.";
+      }
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -50,11 +72,24 @@ function AuthModal({
 
   const handleGoogleSignIn = async () => {
     try {
+      setError("");
+      setLoading(true);
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      window.location.href = "/dashboard";
+      handleAuthSuccess();
     } catch (err: any) {
-      setError(err.message || "An error occurred with Google Sign-In.");
+      const errorCode = err?.code;
+      let errorMessage = err?.message || "An error occurred with Google Sign-In.";
+
+      if (errorCode === "auth/network-request-failed") {
+        errorMessage = "Network error. Please check your connection.";
+      } else if (errorCode === "auth/popup-closed-by-user") {
+        errorMessage = "Sign-in popup was closed.";
+      }
+
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -79,11 +114,10 @@ function AuthModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div
-          className="rounded-3xl p-8 relative overflow-hidden"
+          className="rounded-2xl p-8 relative overflow-hidden"
           style={{
-            background: "var(--bg-primary)",
-            border: "1px solid var(--border-subtle)",
-            boxShadow: "0 25px 80px rgba(0,0,0,0.1), 0 0 80px var(--accent-glow)",
+            background: "var(--surface)",
+            boxShadow: "0 25px 80px rgba(0, 0, 0, 0.6)",
           }}
         >
           {/* Glow accent */}
@@ -97,23 +131,21 @@ function AuthModal({
           {/* Close */}
           <button
             onClick={onClose}
-            className="absolute top-5 right-5 w-8 h-8 rounded-full flex items-center justify-center transition-colors"
-            style={{ background: "var(--bg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--border-subtle)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "var(--bg-secondary)")}
+            className="absolute top-5 right-5 w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/10"
+            style={{ background: "rgba(255, 255, 255, 0.05)" }}
           >
-            <X className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+            <X className="w-4 h-4" style={{ color: "var(--foreground-muted)" }} />
           </button>
 
           {/* Header */}
           <div className="mb-8 relative">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-5 shadow-lg" style={{ background: "linear-gradient(to bottom right, var(--accent-purple), var(--accent-violet))" }}>
-              <ShieldCheck className="w-6 h-6 text-white" />
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-5" style={{ background: "linear-gradient(to bottom right, var(--accent-primary), var(--accent-secondary))" }}>
+              <ShieldCheck className="w-6 h-6" style={{ color: "var(--background)" }} />
             </div>
-            <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
+            <h2 className="text-2xl font-bold" style={{ color: "var(--foreground)" }}>
               {mode === "login" ? "Welcome back" : "Create account"}
             </h2>
-            <p className="text-sm mt-2" style={{ color: "var(--text-secondary)" }}>
+            <p className="text-sm mt-2" style={{ color: "var(--foreground-muted)" }}>
               {mode === "login"
                 ? "Sign in to access your verification dashboard"
                 : "Start verifying businesses in minutes"}
@@ -123,57 +155,60 @@ function AuthModal({
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4 relative">
             {error && (
-              <div className="p-3 text-xs font-semibold rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 text-center">
+              <div className="p-3 text-xs font-semibold rounded-xl text-center" style={{ background: "var(--error-muted)", color: "var(--error)" }}>
                 {error}
               </div>
             )}
             {mode === "signup" && (
-              <div className="relative">
-                <User
-                  className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5"
-                  style={{ color: "var(--text-muted)" }}
-                />
+              <div>
                 <input
                   type="text"
                   placeholder="Full name"
-                  className="auth-input w-full pl-12 pr-4 py-3.5 rounded-xl text-sm font-medium"
+                  className="w-full px-4 py-3.5 rounded-xl text-sm font-medium"
+                  style={{
+                    background: "rgba(255, 255, 255, 0.05)",
+                    color: "var(--foreground)",
+                    border: "1px solid rgba(255, 255, 255, 0.15)"
+                  }}
                 />
               </div>
             )}
 
-            <div className="relative">
-              <Mail
-                className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5"
-                style={{ color: "var(--text-muted)" }}
-              />
+            <div>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email address"
                 required
-                className="auth-input w-full pl-12 pr-4 py-3.5 rounded-xl text-sm font-medium"
+                className="w-full px-4 py-3.5 rounded-xl text-sm font-medium"
+                style={{
+                  background: "rgba(255, 255, 255, 0.05)",
+                  color: "var(--foreground)",
+                  border: "1px solid rgba(255, 255, 255, 0.15)"
+                }}
               />
             </div>
 
             <div className="relative">
-              <Lock
-                className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5"
-                style={{ color: "var(--text-muted)" }}
-              />
               <input
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
                 required
-                className="auth-input w-full pl-12 pr-12 py-3.5 rounded-xl text-sm font-medium"
+                className="w-full px-4 py-3.5 rounded-xl text-sm font-medium"
+                style={{
+                  background: "rgba(255, 255, 255, 0.05)",
+                  color: "var(--foreground)",
+                  border: "1px solid rgba(255, 255, 255, 0.15)"
+                }}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-4 top-1/2 -translate-y-1/2"
-                style={{ color: "var(--text-muted)" }}
+                style={{ color: "var(--foreground-muted)" }}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -194,7 +229,11 @@ function AuthModal({
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary-pill w-full py-3.5 text-sm font-semibold mt-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full py-3.5 text-sm font-semibold mt-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 rounded-xl transition-all"
+              style={{
+                background: "var(--accent-primary)",
+                color: "var(--background)"
+              }}
             >
               {loading ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"}
               {!loading && <ArrowRight className="w-4 h-4" />}
@@ -204,7 +243,7 @@ function AuthModal({
           {/* Divider */}
           <div className="flex items-center gap-4 my-6">
             <div className="flex-1 h-px" style={{ background: "var(--border-subtle)" }} />
-            <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+            <span className="text-xs font-medium" style={{ color: "var(--foreground-subtle)" }}>
               or continue with
             </span>
             <div className="flex-1 h-px" style={{ background: "var(--border-subtle)" }} />
@@ -212,7 +251,7 @@ function AuthModal({
 
           {/* Social */}
           <div className="grid grid-cols-2 gap-3">
-            <button type="button" onClick={handleGoogleSignIn} className="social-btn flex items-center justify-center gap-2.5 py-3 rounded-xl text-sm font-medium">
+            <button type="button" onClick={handleGoogleSignIn} className="flex items-center justify-center gap-2.5 py-3 rounded-xl text-sm font-medium transition-all" style={{ background: "rgba(255, 255, 255, 0.05)", color: "var(--foreground)", border: "1px solid rgba(255, 255, 255, 0.1)" }}>
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
                 <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -221,7 +260,7 @@ function AuthModal({
               </svg>
               Google
             </button>
-            <button className="social-btn flex items-center justify-center gap-2.5 py-3 rounded-xl text-sm font-medium">
+            <button className="flex items-center justify-center gap-2.5 py-3 rounded-xl text-sm font-medium transition-all" style={{ background: "rgba(255, 255, 255, 0.05)", color: "var(--foreground)", border: "1px solid rgba(255, 255, 255, 0.1)" }}>
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
               </svg>
@@ -230,12 +269,12 @@ function AuthModal({
           </div>
 
           {/* Switch mode */}
-          <p className="text-center text-sm mt-6" style={{ color: "var(--text-secondary)" }}>
+          <p className="text-center text-sm mt-6" style={{ color: "var(--foreground-muted)" }}>
             {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
             <button
               onClick={onSwitch}
               className="font-semibold transition-colors"
-              style={{ color: "var(--accent-purple-light)" }}
+              style={{ color: "var(--accent-primary)" }}
             >
               {mode === "login" ? "Sign up" : "Sign in"}
             </button>
@@ -328,13 +367,13 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-          className="relative z-30 flex items-center justify-between px-8 md:px-16 py-5"
+          className="relative z-30 flex items-center justify-between px-8 md:px-16 py-4 rounded-2xl mx-8 mt-4 glass-nav"
         >
           {/* Logo */}
           <VerifyIQLogo />
 
           {/* Center Nav */}
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden md:flex items-center gap-2">
             {[
               { label: "About", href: "about" },
               { label: "Features", href: "features" },
@@ -343,10 +382,16 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
               <button
                 key={item.label}
                 onClick={() => scrollToSection(item.href)}
-                className="text-sm font-medium transition-colors cursor-pointer"
+                className="glass-nav text-sm font-medium transition-all duration-300 cursor-pointer px-5 py-2.5 rounded-xl"
                 style={{ color: "var(--text-secondary)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "var(--text-primary)";
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "var(--text-secondary)";
+                  e.currentTarget.style.background = "transparent";
+                }}
               >
                 {item.label}
               </button>
@@ -357,13 +402,31 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setAuthMode("login")}
-              className="btn-outline-pill hidden sm:flex text-sm py-2.5 px-6"
+              className="glass-nav hidden sm:flex items-center gap-2 text-sm py-2.5 px-5 rounded-xl transition-all duration-300"
+              style={{ color: "var(--text-secondary)" }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--text-primary)";
+                e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-secondary)";
+                e.currentTarget.style.background = "transparent";
+              }}
             >
               Login
             </button>
             <button
               onClick={() => setAuthMode("signup")}
-              className="btn-primary-pill text-sm py-2.5 px-6"
+              className="glass-nav flex items-center gap-2 text-sm py-2.5 px-5 rounded-xl transition-all duration-300"
+              style={{ color: "var(--accent-primary-light)" }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(212, 175, 55, 0.15)";
+                e.currentTarget.style.borderColor = "rgba(212, 175, 55, 0.3)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)";
+              }}
             >
               Sign up
             </button>
@@ -405,12 +468,7 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
               style={{ color: "var(--text-primary)" }}
             >
               Verify with{" "}
-              <span
-                className="bg-clip-text text-transparent"
-                style={{
-                  backgroundImage: "linear-gradient(135deg, var(--accent-purple), var(--accent-purple-light), var(--accent-violet))",
-                }}
-              >
+              <span className="text-accent-primary font-bold">
                 Total Confidence
               </span>
             </motion.h1>
@@ -436,10 +494,10 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
             >
               <button
                 onClick={() => setAuthMode("signup")}
-                className="btn-primary-pill py-4 px-8 text-base"
+                className="glass-nav flex items-center gap-3 py-4 px-8 rounded-xl text-base font-semibold transition-all duration-300"
               >
-                Get Started Free
-                <ArrowRight className="w-4 h-4" />
+                <span>Get Started Free</span>
+                <ArrowRight className="w-4 h-4 flex-shrink-0" />
               </button>
             </motion.div>
 
@@ -477,7 +535,7 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
             transition={{ duration: 0.8, delay: 1.4 }}
             className="absolute left-[8%] bottom-[28%] animate-float-card-left"
           >
-            <div className="glass-card-sm px-5 py-4 w-56">
+            <div className="glass-card-float px-5 py-4 w-56">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
                   Verified Today
@@ -486,7 +544,7 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
                   <ArrowRight className="w-3 h-3 text-white" />
                 </span>
               </div>
-              <span className="text-xl font-bold block" style={{ color: "var(--text-primary)" }}>12,847</span>
+              <span className="text-xl font-bold block" style={{ color: "var(--foreground)" }}>12,847</span>
               <span className="text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>
                 Companies verified
               </span>
@@ -500,7 +558,7 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
             transition={{ duration: 0.8, delay: 1.6 }}
             className="absolute right-[8%] bottom-[18%] animate-float-card-right"
           >
-            <div className="glass-card-sm px-5 py-4 w-48">
+            <div className="glass-card-float px-5 py-4 w-48">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
                   Accuracy
@@ -509,9 +567,9 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
                   <ArrowRight className="w-3 h-3 text-white" />
                 </span>
               </div>
-              <span className="text-3xl font-bold block" style={{ color: "var(--text-primary)" }}>96%</span>
-              <div className="mt-2 h-1 rounded-full overflow-hidden" style={{ background: "var(--border-subtle)" }}>
-                <div className="h-full rounded-full" style={{ width: "96%", background: "linear-gradient(to right, var(--accent-purple), var(--accent-purple-light))" }} />
+              <span className="text-3xl font-bold block" style={{ color: "var(--foreground)" }}>96%</span>
+              <div className="mt-2 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255, 255, 255, 0.1)" }}>
+                <div className="h-full rounded-full" style={{ width: "96%", background: "linear-gradient(to right, var(--accent-primary), var(--accent-primary-light))" }} />
               </div>
             </div>
           </motion.div>
