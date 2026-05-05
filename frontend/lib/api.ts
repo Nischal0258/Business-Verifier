@@ -112,11 +112,12 @@ function getUserFriendlyMessage(errorCode: ErrorCode, error?: AxiosError): strin
       return "Too many requests. Please wait a moment before trying again.";
     default:
       if (error instanceof AxiosError) {
-        if (error.response?.data?.error) {
-          return String(error.response.data.error);
+        const errorData = error.response?.data as { error?: string; message?: string } | undefined;
+        if (errorData?.error) {
+          return String(errorData.error);
         }
-        if (error.response?.data?.message) {
-          return String(error.response.data.message);
+        if (errorData?.message) {
+          return String(errorData.message);
         }
       }
       return "An unexpected error occurred. Please try again.";

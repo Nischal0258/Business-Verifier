@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion, useSpring, useMotionValue, useTransform } from "framer-motion";
+import { motion, useSpring, useMotionValue, useTransform, MotionValue } from "framer-motion";
 
 export default function InteractiveEffects() {
   const [isHovering, setIsHovering] = useState(false);
@@ -185,8 +185,8 @@ function CursorParticle({
   mouseY,
 }: {
   index: number;
-  mouseX: ReturnType<typeof useMotionValue>;
-  mouseY: ReturnType<typeof useMotionValue>;
+  mouseX: MotionValue<number>;
+  mouseY: MotionValue<number>;
 }) {
   const springX = useSpring(mouseX, {
     damping: 20 + index * 12,

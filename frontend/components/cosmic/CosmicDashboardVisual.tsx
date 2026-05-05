@@ -371,7 +371,7 @@ export function useCosmicVisualPerformance() {
   useEffect(() => {
     if (typeof navigator !== "undefined") {
       const canvas = document.createElement("canvas");
-      const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+      const gl = (canvas.getContext("webgl") || canvas.getContext("experimental-webgl")) as WebGLRenderingContext | null;
 
       if (!gl) {
         setIsLowEndDevice(true);
