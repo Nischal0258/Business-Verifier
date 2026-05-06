@@ -181,14 +181,13 @@ export async function fetchCompanyData(
   retryConfig?: Partial<RetryConfig>
 ): Promise<CompanyData> {
   const config = { ...DEFAULT_RETRY_CONFIG, ...retryConfig };
-  const apiBase = getApiBaseUrl();
   const encodedName = encodeURIComponent(name.trim());
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
     try {
       const response = await apiClient.get<ApiResponse<RawCompanyData>>(
-        `${apiBase}/api/verify/${encodedName}`,
+        `/api/verify/${encodedName}`,
         {
           timeout: 15000,
         }
@@ -272,12 +271,11 @@ export async function fetchCompanyData(
 }
 
 export async function downloadCompanyPdf(name: string): Promise<void> {
-  const apiBase = getApiBaseUrl();
   const encodedName = encodeURIComponent(name.trim());
 
   try {
     const response = await apiClient.get(
-      `${apiBase}/api/verify/${encodedName}/pdf`,
+      `/api/verify/${encodedName}/pdf`,
       {
         responseType: "blob",
         timeout: 30000,

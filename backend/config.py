@@ -12,12 +12,19 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
-    openai_api_key: str = ""
+    gemini_api_key: str = ""
+    serper_api_key: str = ""
     cors_origins: Union[List[str], str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001"]
     database_url: str = ""
 
     @model_validator(mode="after")
     def set_defaults(self):
+        # Masked logging for debugging
+        import logging
+        log = logging.getLogger("config")
+        log.info(f"GEMINI_API_KEY: {'set' if self.gemini_api_key else 'NOT set'}")
+        log.info(f"SERPER_API_KEY: {'set' if self.serper_api_key else 'NOT set'}")
+
         if isinstance(self.cors_origins, str):
             self.cors_origins = [origin.strip() for origin in self.cors_origins.split(",")]
         if not self.database_url:

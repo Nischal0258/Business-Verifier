@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Providers from "@/components/Providers";
-import AdvancedCursor from "@/components/layout/AdvancedCursor";
 
 export const metadata: Metadata = {
   title: "VerifyIQ — Business Verification & Analytics",
@@ -15,9 +14,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased cursor-container">
+      <body className="antialiased">
         <Providers>
-          <AdvancedCursor />
           {children}
         </Providers>
       </body>

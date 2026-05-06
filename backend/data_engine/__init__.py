@@ -8,10 +8,10 @@ from .models import CompanyReport
 
 logger = logging.getLogger(__name__)
 
-if not os.getenv("OPENAI_API_KEY"):
+if not os.getenv("GEMINI_API_KEY"):
     logger.warning(
-        "OPENAI_API_KEY environment variable is not set. "
-        "Operating in Mock Mode for LLM-based summarization."
+        "GEMINI_API_KEY environment variable is not set. "
+        "Summarization features will be disabled."
     )
 
 __all__ = ["generate_full_report", "CompanyReport"]

@@ -51,7 +51,7 @@ pip install -r requirements.txt
 
 # 5. Set up environment variables
 copy .env.example .env
-# Edit .env file and add your OPENAI_API_KEY
+# Edit .env file and add your GEMINI_API_KEY
 
 # 6. Start the server
 python -m uvicorn main:app --reload --port 8000
@@ -64,7 +64,7 @@ python -m uvicorn main:app --reload --port 8000
 ### Prerequisites
 
 - **Python 3.13+**
-- **OpenAI API Key**: Get from https://platform.openai.com/api-keys
+- **Gemini API Key**: Get from https://aistudio.google.com/app/apikey
 - **GTK+ for Windows** (required for PDF report generation)
 
 ### Installation
@@ -89,7 +89,7 @@ python -m uvicorn main:app --reload --port 8000
 4. **Configure environment variables:**
    ```bash
    cp .env.example .env
-   # Edit .env and add your OPENAI_API_KEY
+   # Edit .env and add your GEMINI_API_KEY
    ```
 
 5. **Run the server:**
@@ -174,7 +174,8 @@ GET /health
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `OPENAI_API_KEY` | Yes | - | OpenAI API key for LLM analysis |
+| `GEMINI_API_KEY` | Yes | - | Gemini API key for LLM analysis |
+| `SERPER_API_KEY` | No | - | Serper.dev API key for Google Search (Recommended for Indian companies) |
 | `CORS_ORIGINS` | No | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated allowed origins |
 | `DATABASE_URL` | No | `sqlite+aiosqlite:///./business_verify.db` | Database connection string |
 

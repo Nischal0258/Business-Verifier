@@ -373,51 +373,7 @@ input:-webkit-autofill:focus {
   }
 }
 
-/* Advanced Cursor System */
-.cursor-container {
-  cursor: none;
-}
 
-.cursor-container * {
-  cursor: none;
-}
-
-.cursor-container input,
-.cursor-container textarea,
-.cursor-container button,
-.cursor-container a {
-  cursor: auto;
-}
-
-.cursor-container .cursor-fallback {
-  cursor: auto !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cursor-container {
-    cursor: auto;
-  }
-  
-  .cursor-container * {
-    cursor: auto;
-  }
-}
-
-/* Globe cursor interaction */
-.globe-container:hover ~ .cursor-container {
-  cursor: none;
-}
-
-/* Fallback for touch devices */
-@media (hover: none) and (pointer: coarse) {
-  .cursor-container {
-    cursor: auto;
-  }
-  
-  .cursor-container * {
-    cursor: auto;
-  }
-}
 
 /* ── Keyframe Animations ── */
 

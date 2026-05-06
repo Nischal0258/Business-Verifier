@@ -3,10 +3,12 @@
 import asyncio
 import logging
 import re
+import functools
 from typing import Any, Dict, List, Optional
 
 import yfinance as yf
 import httpx
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +68,22 @@ _KNOWN_TICKERS: Dict[str, str] = {
     "wipro": "WIT",
     "hdfc": "HDFCBANK.NS",
     "icici": "ICICIBANK.NS",
+    "colgate": "CL",
+    "palmolive": "CL",
+    "unilever": "UL",
+    "nestle": "NESTLEIND.NS",
 }
+
+
+@functools.lru_cache(maxsize=100)
+def _get_ticker_sync(query: str) -> Optional[str]:
+    """Synchronous ticker lookup for caching."""
+    try:
+        ticker = yf.Ticker(query)
+        info = ticker.info
+        return info.get("symbol")
+    except:
+        return None
 
 
 async def _resolve_ticker(company_name: str) -> Optional[str]:
@@ -84,15 +101,21 @@ async def _resolve_ticker(company_name: str) -> Optional[str]:
     if company_name.isupper() and len(company_name) <= 6 and company_name.isalpha():
         return company_name
 
-    # Try yfinance search
+    # Try yfinance search with parallel exchange checks
     try:
-        search_result = await asyncio.to_thread(
-            lambda: yf.Ticker(company_name).info
-        )
-        if search_result and search_result.get("symbol"):
-            return search_result["symbol"]
-    except Exception:
-        pass
+        search_queries = [company_name]
+        if not re.search(r'\.(NS|BO)$', company_name, re.I):
+            search_queries.extend([f"{company_name}.NS", f"{company_name}.BO"])
+
+        # Run checks in parallel with a timeout
+        tasks = [asyncio.to_thread(_get_ticker_sync, q) for q in search_queries]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for res in results:
+            if isinstance(res, str) and res:
+                return res
+    except Exception as e:
+        logger.warning(f"Ticker resolution failed for {company_name}: {e}")
 
     # Try partial match in known tickers
     for name, ticker in _KNOWN_TICKERS.items():
@@ -249,8 +272,9 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
 
     if ticker_symbol:
         try:
+            # Use a timeout for yfinance calls
             ticker = await asyncio.to_thread(yf.Ticker, ticker_symbol)
-            info = await asyncio.to_thread(lambda: ticker.info)
+            info = await asyncio.wait_for(asyncio.to_thread(lambda: ticker.info), timeout=5.0)
 
             if info:
                 result["company_name"] = info.get("longName") or info.get("shortName") or company_name
@@ -281,22 +305,130 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
         except Exception as exc:
             logger.warning("yfinance info lookup failed for '%s': %s", company_name, exc)
 
-    # If still no data, try DuckDuckGo search for basic info
+    # If still no data, try Serper.dev and DuckDuckGo in parallel if possible
     if result["status"] == "unknown":
-        try:
-            from duckduckgo_search import DDGS
+        tasks = []
+        if settings.serper_api_key:
+            tasks.append(asyncio.create_task(_fetch_serper_data(company_name)))
+        
+        if tasks:
+            done, pending = await asyncio.wait(tasks, timeout=7.0)
+            for task in done:
+                serper_res = task.result()
+                if serper_res:
+                    result.update(serper_res)
+                    result["status"] = "found"
+                    break
+            # Cancel pending tasks
+            for task in pending:
+                task.cancel()
+        
+        # Final fallback to DuckDuckGo if still unknown
+        if result["status"] == "unknown":
+            try:
+                from duckduckgo_search import DDGS
 
-            ddg = DDGS()
-            search_results = await asyncio.to_thread(
-                lambda: list(ddg.text(f"{company_name} company information founded", max_results=3))
-            )
-            if search_results:
-                # Combine snippets for context
-                snippets = " ".join(r.get("body", "") for r in search_results)
-                result["description"] = snippets[:500]
-                result["status"] = "found"  # We found info even if not on stock exchange
+                ddg = DDGS()
+                # Try a more targeted search for Indian companies if context suggests it
+                search_query = f"{company_name} company information India founded"
+                search_results = await asyncio.to_thread(
+                    lambda: list(ddg.text(search_query, max_results=5))
+                )
+                
+                if not search_results:
+                    # Fallback to general search
+                    search_results = await asyncio.to_thread(
+                        lambda: list(ddg.text(f"{company_name} company profile overview", max_results=3))
+                    )
 
-        except Exception as exc:
-            logger.warning("DuckDuckGo search failed for '%s': %s", company_name, exc)
+                if search_results:
+                    # Combine snippets for context
+                    snippets = " ".join(r.get("body", "") for r in search_results)
+                    result["description"] = snippets[:800]
+                    result["status"] = "found"
+                    
+                    # Try to extract website from search results
+                    for r in search_results:
+                        href = r.get("href", "")
+                        if href and not any(x in href.lower() for x in ["duckduckgo", "facebook", "twitter", "linkedin"]):
+                            result["website"] = href
+                            break
+
+            except Exception as exc:
+                logger.warning("DuckDuckGo search failed for '%s': %s", company_name, exc)
 
     return result
+
+
+async def _fetch_serper_data(company_name: str) -> Optional[Dict[str, Any]]:
+    """Search for company information using Serper.dev API."""
+    if not settings.serper_api_key:
+        logger.warning("Serper API key is missing in settings")
+        return None
+
+    url = "https://google.serper.dev/search"
+    # Enhanced query to catch corporate info specifically
+    payload = {
+        "q": f"{company_name} corporate profile about us founded headquarters website",
+        "num": 10
+    }
+    headers = {
+        "X-API-KEY": settings.serper_api_key,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        logger.info(f"Querying Serper.dev for: {company_name}")
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, headers=headers, timeout=10.0)
+            response.raise_for_status()
+            search_data = response.json()
+
+            # 1. Check Knowledge Graph first (best for famous companies like Colgate)
+            kg = search_data.get("knowledgeGraph", {})
+            if kg:
+                description = kg.get("description", "")
+                website = kg.get("website", "")
+                if description:
+                    logger.info(f"Found {company_name} in Knowledge Graph")
+                    return {
+                        "description": description,
+                        "website": website,
+                        "company_name": kg.get("title", company_name)
+                    }
+
+            # 2. Process organic results
+            organic = search_data.get("organic", [])
+            if not organic:
+                logger.warning(f"Serper returned no organic results for {company_name}")
+                return None
+
+            # Extract info from snippets
+            description_parts = []
+            for r in organic[:5]:
+                snippet = r.get("snippet", "")
+                if snippet and len(snippet) > 20:
+                    description_parts.append(snippet)
+            
+            description = " ".join(description_parts)
+            
+            # 3. Find official website
+            website = None
+            for r in organic:
+                link = r.get("link", "")
+                # Prioritize links that aren't social media or aggregators
+                if link and not any(x in link.lower() for x in ["linkedin", "facebook", "twitter", "crunchbase", "wikipedia", "youtube", "instagram", "glassdoor", "bloomberg"]):
+                    website = link
+                    break
+            
+            if not website and organic:
+                website = organic[0].get("link")
+
+            return {
+                "description": description[:2000],
+                "website": website,
+            }
+
+    except Exception as e:
+        logger.error(f"Serper API request failed for {company_name}: {e}")
+        return None

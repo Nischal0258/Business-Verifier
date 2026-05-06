@@ -433,7 +433,7 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
           </div>
         </motion.nav>
 
-        {/* ── Hero Content (no search bar — CTA buttons instead) ── */}
+        {/* ── Hero Content (Restore marketing content for landing page) ── */}
         <div className="relative z-20 flex-1 flex items-center justify-center px-6">
           <motion.div
             style={{ opacity: textOpacity, y: textY }}
@@ -485,7 +485,7 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
               Instant verification, risk assessment, and financial deep-dives.
             </motion.p>
 
-            {/* CTA Buttons (replaced search bar) */}
+            {/* CTA Buttons */}
             <motion.div
               initial={{ opacity: 0, y: 20, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}

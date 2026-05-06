@@ -39,20 +39,21 @@ except Exception as e:
     sys.exit(1)
 
 
-async def _validate_openai_key():
-    """Validate OpenAI API key on startup."""
-    import openai
+async def _validate_gemini_key():
+    """Validate Gemini API key on startup."""
+    import google.generativeai as genai
 
-    if not settings.openai_api_key:
-        logger.warning("OPENAI_API_KEY not set — OpenAI features will be disabled")
+    if not settings.gemini_api_key:
+        logger.warning("GEMINI_API_KEY not set — Gemini features will be disabled")
         return
 
     try:
-        client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
-        await client.models.list()
-        logger.info("OpenAI API key validated successfully")
+        genai.configure(api_key=settings.gemini_api_key)
+        # Quick check by listing models
+        genai.list_models()
+        logger.info("Gemini API key validated successfully")
     except Exception as e:
-        logger.warning(f"Could not validate OpenAI key: {e}. OpenAI features may be limited.")
+        logger.warning(f"Could not validate Gemini key: {e}. Gemini features may be limited.")
 
 
 @asynccontextmanager
@@ -61,7 +62,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up Business Verification API...")
 
     try:
-        asyncio.create_task(_validate_openai_key())
+        asyncio.create_task(_validate_gemini_key())
         await init_db()
         logger.info("Startup complete. API ready to accept requests.")
     except Exception as e:
