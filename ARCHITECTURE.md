@@ -38,7 +38,10 @@ graph TD
         Firebase[Firebase Auth API]
         Gemini[Google Gemini 1.5 Flash]
         Serper[Serper.dev Google Search]
+        DuckDuckGo[DuckDuckGo Search]
         yFinance[Yahoo Finance API]
+        AlphaVantage[Alpha Vantage API]
+        Finnhub[Finnhub API]
     end
 
     UI --> Router
@@ -46,7 +49,10 @@ graph TD
     Router --> Fetcher
     Fetcher --> TickerResolver
     Fetcher --> Serper
+    Fetcher --> DuckDuckGo
     Fetcher --> yFinance
+    Fetcher --> AlphaVantage
+    Fetcher --> Finnhub
     Fetcher --> Summarizer
     Summarizer --> Gemini
     Router --> DB
@@ -61,6 +67,10 @@ graph TD
 | **Frontend ↔ Backend** | HTTPS (REST) | JSON | Standardized API communication |
 | **Backend ↔ Gemini** | gRPC / HTTPS | Protobuf / JSON | High-throughput AI synthesis |
 | **Backend ↔ Serper** | HTTPS | JSON | Real-time SERP data ingestion |
+| **Backend ↔ DuckDuckGo** | HTTPS | JSON | Fallback search for private/unlisted companies |
+| **Backend ↔ yFinance** | HTTPS | JSON/Pandas | Real-time and historical financial data |
+| **Backend ↔ Alpha Vantage** | HTTPS | JSON | Income statement and fundamental data |
+| **Backend ↔ Finnhub** | HTTPS | JSON | Financial metrics and company fundamentals |
 | **Backend ↔ Database** | SQL (Async) | Row/Object | Persistent storage via SQLAlchemy |
 
 ---

@@ -14,16 +14,19 @@ class Settings(BaseSettings):
 
     gemini_api_key: str = ""
     serper_api_key: str = ""
+    alpha_vantage_api_key: str = ""
+    finnhub_api_key: str = ""
     cors_origins: Union[List[str], str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001"]
     database_url: str = ""
 
     @model_validator(mode="after")
     def set_defaults(self):
-        # Masked logging for debugging
         import logging
         log = logging.getLogger("config")
         log.info(f"GEMINI_API_KEY: {'set' if self.gemini_api_key else 'NOT set'}")
         log.info(f"SERPER_API_KEY: {'set' if self.serper_api_key else 'NOT set'}")
+        log.info(f"ALPHA_VANTAGE_API_KEY: {'set' if self.alpha_vantage_api_key else 'NOT set'}")
+        log.info(f"FINNHUB_API_KEY: {'set' if self.finnhub_api_key else 'NOT set'}")
 
         if isinstance(self.cors_origins, str):
             self.cors_origins = [origin.strip() for origin in self.cors_origins.split(",")]

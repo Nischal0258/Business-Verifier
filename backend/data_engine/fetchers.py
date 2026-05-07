@@ -126,32 +126,176 @@ async def _resolve_ticker(company_name: str) -> Optional[str]:
 
 
 async def get_financials(ticker_or_name: str) -> List[Dict[str, Any]]:
-    """Fetch REAL historical revenue data via yfinance.
+    """Fetch historical revenue data with fallback chain.
 
-    Resolves company names to ticker symbols, then fetches actual
-    income statements from Yahoo Finance.
-
-    Parameters
-    ----------
-    ticker_or_name:
-        Yahoo Finance ticker symbol or company name.
+    Order: Serper → DuckDuckGo → yfinance → Alpha Vantage → Finnhub
 
     Returns
     -------
     List[Dict[str, Any]]
         List of ``{"year": int, "revenue": float, "note": str}`` dictionaries.
     """
-    # Resolve ticker
-    ticker_symbol = await _resolve_ticker(ticker_or_name)
+    company_name = ticker_or_name.strip()
+
+    sources = [
+        ("Serper", _fetch_financials_serper),
+        ("DuckDuckGo", _fetch_financials_duckduckgo),
+        ("yfinance", _fetch_financials_yfinance),
+        ("Alpha Vantage", _fetch_financials_alpha_vantage),
+        ("Finnhub", _fetch_financials_finnhub),
+    ]
+
+    for source_name, fetcher_func in sources:
+        try:
+            result = await fetcher_func(company_name)
+            if result:
+                logger.info(
+                    "Financial data fetched for '%s' via %s: %d records",
+                    company_name, source_name, len(result)
+                )
+                return result
+        except Exception as exc:
+            logger.warning("%s failed for '%s': %s", source_name, company_name, exc)
+
+    logger.warning("All financial data sources exhausted for '%s'. Returning private company response.", company_name)
+    return _private_company_response(company_name)
+
+
+async def _fetch_financials_serper(company_name: str) -> Optional[List[Dict[str, Any]]]:
+    """Fetch financial data from Serper.dev search API."""
+    if not settings.serper_api_key:
+        return None
+
+    url = "https://google.serper.dev/search"
+    payload = {
+        "q": f"{company_name} annual revenue income financial results {2024} {2023}",
+        "num": 10
+    }
+    headers = {
+        "X-API-KEY": settings.serper_api_key,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, headers=headers, timeout=10.0)
+            response.raise_for_status()
+            search_data = response.json()
+
+        records = _extract_revenue_from_snippets(search_data.get("organic", []), "Serper")
+        return records if records else None
+
+    except Exception as e:
+        logger.warning("Serper financials fetch failed: %s", e)
+        return None
+
+
+async def _fetch_financials_duckduckgo(company_name: str) -> Optional[List[Dict[str, Any]]]:
+    """Fetch financial data from DuckDuckGo search."""
+    try:
+        from duckduckgo_search import DDGS
+
+        ddg = DDGS()
+        search_query = f"{company_name} annual revenue income statement financial results"
+        search_results = await asyncio.to_thread(
+            lambda: list(ddg.text(search_query, max_results=10))
+        )
+
+        if not search_results:
+            return None
+
+        records = _extract_revenue_from_snippets(search_results, "DuckDuckGo")
+        return records if records else None
+
+    except Exception as e:
+        logger.warning("DuckDuckGo financials fetch failed: %s", e)
+        return None
+
+
+def _extract_revenue_from_snippets(results: List[Dict], source: str) -> List[Dict[str, Any]]:
+    """Extract revenue figures from search snippets using regex patterns."""
+    records = []
+    years_found = set()
+
+    revenue_patterns = [
+        r"(?:revenue|sales|revenue of|income|turnover)\s*(?:of|data)?\s*(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(?:crore|cr|million|bn|billion|trillion|tr)",
+        r"(?:Rs\.?|USD|\$|₹)\s*([\d,.]+)\s*(?:crore|cr|million|bn|billion|tr)",
+        r"([\d,.]+)\s*(?:crore|cr)\s*(?:revenue|sales)?",
+        r"FY(\d{2,4})[:\s]+(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
+        r"FY(\d{4})[:\s]+(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
+    ]
+
+    for result in results:
+        snippet = result.get("snippet", "") or result.get("body", "") or ""
+
+        for pattern in revenue_patterns:
+            matches = re.finditer(pattern, snippet, re.IGNORECASE)
+            for match in matches:
+                try:
+                    if match.lastindex == 2:
+                        year_str = match.group(1)
+                        value_str = match.group(2)
+                        year = int(year_str) if len(year_str) == 4 else 2000 + int(year_str) if len(year_str) == 2 else None
+                    else:
+                        value_str = match.group(1)
+                        year = None
+
+                    if year and year not in years_found and 1990 <= year <= 2030:
+                        value = _parse_revenue_value(value_str)
+                        if value and value > 0:
+                            records.append({
+                                "year": year,
+                                "revenue": value,
+                                "note": f"Extracted from {source} search"
+                            })
+                            years_found.add(year)
+                except (ValueError, AttributeError):
+                    continue
+
+    if records:
+        records.sort(key=lambda d: d["year"], reverse=True)
+        return records[:10]
+
+    return None
+
+
+def _parse_revenue_value(value_str: str) -> Optional[float]:
+    """Parse revenue string to float, handling Indian numbering system."""
+    value_str = value_str.replace(",", "").strip()
+
+    multipliers = {
+        "crore": 10_000_000,
+        "cr": 10_000_000,
+        "million": 1_000_000,
+        "bn": 1_000_000_000,
+        "billion": 1_000_000_000,
+        "tr": 1_000_000_000_000,
+        "trillion": 1_000_000_000_000,
+    }
+
+    for suffix, multiplier in multipliers.items():
+        if suffix in value_str.lower():
+            try:
+                number = float(re.sub(r"[^\d.]", "", value_str.lower().replace(suffix, "")))
+                return number * multiplier
+            except ValueError:
+                return None
+
+    try:
+        return float(value_str)
+    except ValueError:
+        return None
+
+
+async def _fetch_financials_yfinance(company_name: str) -> Optional[List[Dict[str, Any]]]:
+    """Fetch financial data from Yahoo Finance (yfinance)."""
+    ticker_symbol = await _resolve_ticker(company_name)
 
     if not ticker_symbol:
-        logger.warning(
-            "Could not resolve ticker for '%s'. Company may be private/unlisted.",
-            ticker_or_name,
-        )
-        return _private_company_response(ticker_or_name)
+        logger.info("Could not resolve ticker for '%s' in yfinance", company_name)
+        return None
 
-    logger.info("Resolved '%s' → ticker '%s'", ticker_or_name, ticker_symbol)
+    logger.info("Attempting yfinance fetch for '%s' (ticker: %s)", company_name, ticker_symbol)
 
     try:
         ticker = await asyncio.to_thread(yf.Ticker, ticker_symbol)
@@ -160,7 +304,6 @@ async def get_financials(ticker_or_name: str) -> List[Dict[str, Any]]:
         if income_stmt is None or income_stmt.empty:
             raise ValueError("No income statement available.")
 
-        # Try "Total Revenue" first, fall back to other labels
         revenue_row = None
         for label in ["Total Revenue", "Operating Revenue", "Revenue"]:
             if label in income_stmt.index:
@@ -181,19 +324,11 @@ async def get_financials(ticker_or_name: str) -> List[Dict[str, Any]]:
             })
 
         records.sort(key=lambda d: d["year"], reverse=True)
-        logger.info(
-            "Fetched %d years of revenue data for '%s' (%s)",
-            len(records), ticker_or_name, ticker_symbol
-        )
-        return records
+        return records if records else None
 
     except Exception as exc:
-        logger.warning(
-            "yfinance income_stmt failed for '%s' (%s): %s. Trying quarterly...",
-            ticker_or_name, ticker_symbol, exc,
-        )
+        logger.warning("yfinance failed for '%s': %s", company_name, exc)
 
-        # Fall back to quarterly financials and annualize
         try:
             ticker = await asyncio.to_thread(yf.Ticker, ticker_symbol)
             q_income = await asyncio.to_thread(lambda: ticker.quarterly_income_stmt)
@@ -216,13 +351,132 @@ async def get_financials(ticker_or_name: str) -> List[Dict[str, Any]]:
                         {"year": yr, "revenue": rev, "note": f"Annualized from quarterly ({ticker_symbol})"}
                         for yr, rev in sorted(yearly.items(), reverse=True)
                     ]
-                    if records:
-                        return records
+                    return records if records else None
 
         except Exception as q_exc:
-            logger.warning("Quarterly fallback also failed: %s", q_exc)
+            logger.warning("yfinance quarterly fallback also failed: %s", q_exc)
 
-        return _private_company_response(ticker_or_name)
+        return None
+
+
+async def _fetch_financials_alpha_vantage(company_name: str) -> Optional[List[Dict[str, Any]]]:
+    """Fetch financial data from Alpha Vantage API."""
+    if not settings.alpha_vantage_api_key:
+        logger.info("Alpha Vantage API key not configured")
+        return None
+
+    ticker_symbol = await _resolve_ticker(company_name)
+    if not ticker_symbol:
+        ticker_symbol = company_name.upper().replace(" ", "")
+
+    url = "https://www.alphavantage.co/query"
+    params = {
+        "function": "INCOME_STATEMENT",
+        "symbol": ticker_symbol.replace(".NS", "").replace(".BO", ""),
+        "apikey": settings.alpha_vantage_api_key,
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=15.0)
+            response.raise_for_status()
+            data = response.json()
+
+        if "Error Message" in data or "Note" in data:
+            logger.warning("Alpha Vantage error: %s", data.get("Error Message") or data.get("Note"))
+            return None
+
+        annual_reports = data.get("annualReports", [])
+        if not annual_reports:
+            return None
+
+        records = []
+        for report in annual_reports:
+            fiscal_date = report.get("fiscalDateEnding", "")
+            try:
+                year = int(fiscal_date[:4])
+            except (ValueError, TypeError):
+                continue
+
+            revenue = report.get("totalRevenue")
+            if not revenue:
+                continue
+
+            try:
+                revenue_float = float(re.sub(r"[^\d]", "", revenue))
+            except (ValueError, AttributeError):
+                continue
+
+            records.append({
+                "year": year,
+                "revenue": revenue_float,
+                "note": f"Source: Alpha Vantage ({ticker_symbol})"
+            })
+
+        records.sort(key=lambda d: d["year"], reverse=True)
+        return records if records else None
+
+    except Exception as e:
+        logger.warning("Alpha Vantage fetch failed for '%s': %s", company_name, e)
+        return None
+
+
+async def _fetch_financials_finnhub(company_name: str) -> Optional[List[Dict[str, Any]]]:
+    """Fetch financial data from Finnhub API."""
+    if not settings.finnhub_api_key:
+        logger.info("Finnhub API key not configured")
+        return None
+
+    ticker_symbol = await _resolve_ticker(company_name)
+    if not ticker_symbol:
+        ticker_symbol = company_name.upper().replace(" ", "")
+
+    url = f"https://finnhub.io/api/v1/stock/financials"
+    params = {
+        "symbol": ticker_symbol.replace(".NS", "").replace(".BO", ""),
+        "metric": "all",
+        "token": settings.finnhub_api_key,
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=15.0)
+            response.raise_for_status()
+            data = response.json()
+
+        if data.get("error") or not data.get("data"):
+            logger.warning("Finnhub error: %s", data.get("error"))
+            return None
+
+        metrics = data.get("data", [])
+        if not metrics:
+            return None
+
+        records = []
+        for metric in metrics[:10]:
+            year = metric.get("year")
+            if not year:
+                continue
+
+            revenue = metric.get("revenue") or metric.get("totalRevenue")
+            if not revenue:
+                continue
+
+            try:
+                records.append({
+                    "year": int(year),
+                    "revenue": float(re.sub(r"[^\d.]", "", str(revenue))),
+                    "note": f"Source: Finnhub ({ticker_symbol})"
+                })
+            except (ValueError, AttributeError):
+                continue
+
+        records.sort(key=lambda d: d["year"], reverse=True)
+        return records if records else None
+
+    except Exception as e:
+        logger.warning("Finnhub fetch failed for '%s': %s", company_name, e)
+        return None
 
 
 def _private_company_response(company_name: str) -> List[Dict[str, Any]]:
