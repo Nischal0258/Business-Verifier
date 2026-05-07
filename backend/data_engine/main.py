@@ -17,7 +17,7 @@ async def generate_full_report(company_name: str) -> CompanyReport:
 
     This function concurrently fetches registry and financial data,
     runs the verification algorithm, and synthesises a company history.
-    All data is sourced from real APIs (Yahoo Finance, web search).
+    All data is sourced from real APIs (Yahoo Finance, Serper, web search).
 
     Parameters
     ----------
@@ -33,22 +33,12 @@ async def generate_full_report(company_name: str) -> CompanyReport:
     logger.info("Starting full report generation for '%s'", company_name)
 
     try:
-        # Fetch registry and financial data concurrently
         registry_data, financial_data = await _fetch_parallel(company_name)
 
-        # Use the real company name from registry data if available
         real_name = registry_data.get("company_name", company_name)
-
-        # Determine verification status
         is_verified, verification_score = verify_company(registry_data, financial_data)
-
-        # Build raw context string for summarizer
         raw_context = _build_raw_context(real_name, registry_data, financial_data)
-
-        # Get the real company description from registry data
         company_description = registry_data.get("description")
-
-        # Summarize (async, with real data fallback)
         company_history = await summarize_history(raw_context, company_description)
 
         report = CompanyReport(
@@ -59,6 +49,13 @@ async def generate_full_report(company_name: str) -> CompanyReport:
             company_history=company_history,
             jurisdiction=registry_data.get("jurisdiction") or registry_data.get("country"),
             incorporation_date=registry_data.get("registration_date"),
+            founder_profiles=registry_data.get("founder_profiles", []),
+            headquarters_info=registry_data.get("headquarters_info", {}),
+            global_operations=registry_data.get("global_operations", []),
+            citation_sources=registry_data.get("citation_sources", []),
+            chapter_last_updated=registry_data.get("chapter_last_updated"),
+            employee_count=registry_data.get("employee_count"),
+            market_cap=registry_data.get("market_cap"),
         )
 
         logger.info(
@@ -126,7 +123,6 @@ def _build_raw_context(
         f"Status: {registry_data.get('status', 'unknown')}",
     ]
 
-    # Add real metadata if available
     if registry_data.get("country"):
         lines.append(f"Country: {registry_data['country']}")
     if registry_data.get("industry"):

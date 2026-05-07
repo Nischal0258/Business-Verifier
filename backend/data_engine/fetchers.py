@@ -5,12 +5,40 @@ import logging
 import re
 import functools
 from typing import Any, Dict, List, Optional
+from datetime import datetime
 
 import yfinance as yf
 import httpx
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+_COUNTRY_HINTS = [
+    "United States",
+    "Canada",
+    "Mexico",
+    "United Kingdom",
+    "Germany",
+    "France",
+    "Spain",
+    "Italy",
+    "Netherlands",
+    "Sweden",
+    "Norway",
+    "Switzerland",
+    "India",
+    "China",
+    "Japan",
+    "South Korea",
+    "Singapore",
+    "Australia",
+    "New Zealand",
+    "UAE",
+    "Saudi Arabia",
+    "Brazil",
+    "Argentina",
+    "South Africa",
+]
 
 # ─── Ticker Symbol Resolution ───────────────────────────────────────
 # Maps well-known company names to Yahoo Finance tickers.
@@ -72,6 +100,29 @@ _KNOWN_TICKERS: Dict[str, str] = {
     "palmolive": "CL",
     "unilever": "UL",
     "nestle": "NESTLEIND.NS",
+    "reliance industries": "RELIANCE.NS",
+    "tcs": "TCS.NS",
+    "tata consultancy services": "TCS.NS",
+    "hdfc bank": "HDFCBANK.NS",
+    "icici bank": "ICICIBANK.NS",
+    "infosys": "INFY",
+    "wipro": "WIT",
+    "bharti airtel": "BHARTIARTL.NS",
+    "itc": "ITC.NS",
+    "sbi": "SBIN.NS",
+    "state bank of india": "SBIN.NS",
+    "lic": "LICI.NS",
+    "kotak": "KOTAKBANK.NS",
+    "axis bank": "AXISBANK.NS",
+    "bajaj finance": "BAJFINANCE.NS",
+    "adani": "ADANIENT.NS",
+    "adani enterprises": "ADANIENT.NS",
+    "zomato": "ZOMATO.NS",
+    "swiggy": "SWIGGY.NS",
+    "paytm": "PAYTM.NS",
+    "nykaa": "NYKAA.NS",
+    "ola": "OLA.NS",
+    "flipkart": "WMT", # Owned by Walmart
 }
 
 
@@ -218,11 +269,12 @@ def _extract_revenue_from_snippets(results: List[Dict], source: str) -> List[Dic
     years_found = set()
 
     revenue_patterns = [
-        r"(?:revenue|sales|revenue of|income|turnover)\s*(?:of|data)?\s*(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(?:crore|cr|million|bn|billion|trillion|tr)",
-        r"(?:Rs\.?|USD|\$|₹)\s*([\d,.]+)\s*(?:crore|cr|million|bn|billion|tr)",
-        r"([\d,.]+)\s*(?:crore|cr)\s*(?:revenue|sales)?",
+        r"(?:revenue|sales|revenue of|income|turnover|net worth)\s*(?:of|data)?\s*(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(?:crore|cr|million|m|bn|billion|b|trillion|tr|t)",
+        r"(?:Rs\.?|USD|\$|₹)\s*([\d,.]+)\s*(?:crore|cr|million|m|bn|billion|b|trillion|tr|t)",
+        r"([\d,.]+)\s*(?:crore|cr|million|bn|billion)\s*(?:revenue|sales|turnover)?",
         r"FY(\d{2,4})[:\s]+(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
-        r"FY(\d{4})[:\s]+(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
+        r"(\d{4})\s+(?:revenue|turnover|sales)\s+(?:of\s+)?(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
+        r"(?:revenue|turnover|sales)\s+in\s+(\d{4})\s+(?:was\s+)?(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
     ]
 
     for result in results:
@@ -267,10 +319,13 @@ def _parse_revenue_value(value_str: str) -> Optional[float]:
         "crore": 10_000_000,
         "cr": 10_000_000,
         "million": 1_000_000,
+        "m": 1_000_000,
         "bn": 1_000_000_000,
         "billion": 1_000_000_000,
+        "b": 1_000_000_000,
         "tr": 1_000_000_000_000,
         "trillion": 1_000_000_000_000,
+        "t": 1_000_000_000_000,
     }
 
     for suffix, multiplier in multipliers.items():
@@ -519,6 +574,16 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
         "market_cap": None,
         "country": None,
         "ceo": None,
+        "founder_profiles": [],
+        "headquarters_info": {
+            "full_address": None,
+            "founding_date": None,
+            "facility_details": None,
+            "map_query": None,
+        },
+        "global_operations": [],
+        "citation_sources": [],
+        "chapter_last_updated": datetime.utcnow().isoformat() + "Z",
     }
 
     # Try yfinance for company info
@@ -542,12 +607,15 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
                 result["employees"] = info.get("fullTimeEmployees", None)
                 result["ceo"] = None  # yfinance doesn't reliably provide this
                 result["ticker"] = ticker_symbol
+                result["founder_profiles"] = _extract_founder_profiles(info)
+                result["headquarters_info"] = _extract_headquarters_info(info, result["registration_date"])
 
                 # Market cap
                 mc = info.get("marketCap")
                 if mc:
                     result["market_cap"] = mc
                     result["status"] = "active"
+                result["employee_count"] = info.get("fullTimeEmployees")
 
                 logger.info(
                     "Got real company info for '%s': industry=%s, country=%s, employees=%s",
@@ -559,18 +627,57 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
         except Exception as exc:
             logger.warning("yfinance info lookup failed for '%s': %s", company_name, exc)
 
-    # If still no data, try Serper.dev and DuckDuckGo in parallel if possible
+    # Fallback/Supplemental search for missing critical info
+    missing_critical = []
+    if not result.get("founder_profiles"):
+        missing_critical.append("founders")
+    if not result.get("headquarters_info") or not result["headquarters_info"].get("full_address"):
+        missing_critical.append("headquarters")
+    if not result.get("registration_date"):
+        missing_critical.append("founding_date")
+
+    if missing_critical:
+        logger.info(f"Supplemental search for missing info: {missing_critical}")
+        supplemental_tasks = []
+        if "founders" in missing_critical:
+            supplemental_tasks.append(_fetch_founders_search(company_name))
+        else:
+            supplemental_tasks.append(asyncio.sleep(0, result=[]))
+            
+        if "headquarters" in missing_critical:
+            supplemental_tasks.append(_fetch_hq_search(company_name))
+        else:
+            supplemental_tasks.append(asyncio.sleep(0, result={}))
+            
+        if "founding_date" in missing_critical:
+            supplemental_tasks.append(_fetch_founding_date_search(company_name))
+        else:
+            supplemental_tasks.append(asyncio.sleep(0, result=None))
+
+        supp_results = await asyncio.gather(*supplemental_tasks)
+        
+        if "founders" in missing_critical and supp_results[0]:
+            result["founder_profiles"] = supp_results[0]
+        if "headquarters" in missing_critical and supp_results[1]:
+            # Merge with existing if any
+            result["headquarters_info"].update(supp_results[1])
+        if "founding_date" in missing_critical and supp_results[2]:
+            result["registration_date"] = supp_results[2]
+            result["headquarters_info"]["founding_date"] = supp_results[2]
+
+    # If still no data, try Wikipedia, Serper.dev and DuckDuckGo in parallel if possible
     if result["status"] == "unknown":
         tasks = []
+        tasks.append(asyncio.create_task(_fetch_wikipedia_data(company_name)))
         if settings.serper_api_key:
             tasks.append(asyncio.create_task(_fetch_serper_data(company_name)))
         
         if tasks:
             done, pending = await asyncio.wait(tasks, timeout=7.0)
             for task in done:
-                serper_res = task.result()
-                if serper_res:
-                    result.update(serper_res)
+                res = task.result()
+                if res:
+                    result.update(res)
                     result["status"] = "found"
                     break
             # Cancel pending tasks
@@ -600,6 +707,16 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
                     snippets = " ".join(r.get("body", "") for r in search_results)
                     result["description"] = snippets[:800]
                     result["status"] = "found"
+                    result["global_operations"] = _build_global_operations(
+                        snippets,
+                        fallback_country=result.get("country"),
+                        city=result.get("headquarters_info", {}).get("map_query"),
+                        industry=result.get("industry"),
+                        sector=result.get("sector"),
+                    )
+                    result["citation_sources"].extend(
+                        _citation_from_duckduckgo(search_results)
+                    )
                     
                     # Try to extract website from search results
                     for r in search_results:
@@ -611,7 +728,170 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
             except Exception as exc:
                 logger.warning("DuckDuckGo search failed for '%s': %s", company_name, exc)
 
+    if not result.get("global_operations"):
+        fallback_country = result.get("country")
+        if fallback_country:
+            result["global_operations"] = [
+                {
+                    "country": fallback_country,
+                    "office_locations": [result.get("headquarters_info", {}).get("map_query") or fallback_country],
+                    "service_offerings": _derive_services(result.get("industry"), result.get("sector")),
+                    "source": "yfinance",
+                }
+            ]
+
+    if not result.get("citation_sources") and result.get("website"):
+        result["citation_sources"] = [
+            {
+                "title": f"{result.get('company_name', company_name)} official website",
+                "url": result.get("website"),
+                "publisher": "Company",
+                "verified": True,
+            }
+        ]
+
+    result["chapter_last_updated"] = datetime.utcnow().isoformat() + "Z"
     return result
+
+
+def _normalize_whitespace(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _extract_founder_profiles(info: Dict[str, Any]) -> List[Dict[str, Any]]:
+    officers = info.get("companyOfficers") or []
+    profiles: List[Dict[str, Any]] = []
+    for officer in officers[:6]:
+        name = officer.get("name")
+        title = officer.get("title")
+        if not name:
+            continue
+        lower_title = (title or "").lower()
+        founding_role = "Founder" if "founder" in lower_title or "co-founder" in lower_title else "Leadership"
+        bio_parts = []
+        if officer.get("age"):
+            bio_parts.append(f"Age {officer.get('age')}")
+        if officer.get("yearBorn"):
+            bio_parts.append(f"Born {officer.get('yearBorn')}")
+        profiles.append(
+            {
+                "name": name,
+                "biography": ", ".join(bio_parts) or "Public executive profile sourced from market disclosures.",
+                "founding_role": founding_role,
+                "current_position": title or "Executive",
+                "photo_url": None,
+                "source": "Yahoo Finance",
+            }
+        )
+    return profiles[:4]
+
+
+def _extract_headquarters_info(info: Dict[str, Any], founding_date: Optional[str]) -> Dict[str, Optional[str]]:
+    address_parts = [
+        info.get("address1"),
+        info.get("address2"),
+        info.get("city"),
+        info.get("state"),
+        info.get("zip"),
+        info.get("country"),
+    ]
+    full_address = ", ".join([part for part in address_parts if part])
+    city_country = ", ".join([part for part in [info.get("city"), info.get("country")] if part])
+    return {
+        "full_address": _normalize_whitespace(full_address),
+        "founding_date": founding_date or None,
+        "facility_details": "Corporate headquarters and executive operations campus.",
+        "map_query": city_country or _normalize_whitespace(full_address),
+    }
+
+
+def _derive_services(industry: Optional[str], sector: Optional[str]) -> List[str]:
+    services: List[str] = []
+    if industry:
+        services.append(industry)
+    if sector and sector not in services:
+        services.append(sector)
+    if not services:
+        services = ["Core business operations", "Corporate services"]
+    return services[:4]
+
+
+def _extract_countries(text: str) -> List[str]:
+    detected: List[str] = []
+    lowered = text.lower()
+    for country in _COUNTRY_HINTS:
+        if country.lower() in lowered:
+            detected.append(country)
+    # Keep insertion order and unique values
+    unique: List[str] = []
+    for country in detected:
+        if country not in unique:
+            unique.append(country)
+    return unique
+
+
+def _build_global_operations(
+    text: str,
+    fallback_country: Optional[str],
+    city: Optional[str],
+    industry: Optional[str],
+    sector: Optional[str],
+) -> List[Dict[str, Any]]:
+    countries = _extract_countries(text)
+    if fallback_country and fallback_country not in countries:
+        countries.insert(0, fallback_country)
+    operations: List[Dict[str, Any]] = []
+    for country in countries[:8]:
+        office_locations = [city] if city else [country]
+        operations.append(
+            {
+                "country": country,
+                "office_locations": [loc for loc in office_locations if loc],
+                "service_offerings": _derive_services(industry, sector),
+                "source": "Serper / public web data",
+            }
+        )
+    return operations
+
+
+def _citation_from_organic(organic: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    citations: List[Dict[str, Any]] = []
+    for item in organic[:6]:
+        link = item.get("link")
+        title = item.get("title")
+        if not link or not title:
+            continue
+        publisher = re.sub(r"^www\.", "", link.split("/")[2]) if "://" in link else "Web"
+        citations.append(
+            {
+                "title": title[:140],
+                "url": link,
+                "publisher": publisher,
+                "verified": True,
+            }
+        )
+    return citations
+
+
+def _citation_from_duckduckgo(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    citations: List[Dict[str, Any]] = []
+    for item in results[:5]:
+        href = item.get("href")
+        title = item.get("title")
+        if not href or not title:
+            continue
+        publisher = re.sub(r"^www\.", "", href.split("/")[2]) if "://" in href else "Web"
+        citations.append(
+            {
+                "title": title[:140],
+                "url": href,
+                "publisher": publisher,
+                "verified": True,
+            }
+        )
+    return citations
 
 
 async def _fetch_serper_data(company_name: str) -> Optional[Dict[str, Any]]:
@@ -645,10 +925,27 @@ async def _fetch_serper_data(company_name: str) -> Optional[Dict[str, Any]]:
                 website = kg.get("website", "")
                 if description:
                     logger.info(f"Found {company_name} in Knowledge Graph")
+                    hq_location = kg.get("headquarters") or kg.get("headquarter") or kg.get("founded")
+                    snippets_for_ops = f"{description} {kg.get('descriptionSource', '')}"
                     return {
                         "description": description,
                         "website": website,
-                        "company_name": kg.get("title", company_name)
+                        "company_name": kg.get("title", company_name),
+                        "global_operations": _build_global_operations(
+                            snippets_for_ops,
+                            fallback_country=None,
+                            city=hq_location,
+                            industry=None,
+                            sector=None,
+                        ),
+                        "citation_sources": [
+                            {
+                                "title": f"{kg.get('title', company_name)} knowledge graph profile",
+                                "url": website,
+                                "publisher": "Google Knowledge Graph",
+                                "verified": True,
+                            }
+                        ],
                     }
 
             # 2. Process organic results
@@ -681,8 +978,155 @@ async def _fetch_serper_data(company_name: str) -> Optional[Dict[str, Any]]:
             return {
                 "description": description[:2000],
                 "website": website,
+                "global_operations": _build_global_operations(
+                    description,
+                    fallback_country=None,
+                    city=None,
+                    industry=None,
+                    sector=None,
+                ),
+                "citation_sources": _citation_from_organic(organic),
             }
 
     except Exception as e:
         logger.error(f"Serper API request failed for {company_name}: {e}")
         return None
+
+
+async def _fetch_wikipedia_data(company_name: str) -> Optional[Dict[str, Any]]:
+    """Fetch company information from Wikipedia."""
+    try:
+        # 1. Search for the most relevant Wikipedia page
+        search_url = "https://en.wikipedia.org/w/api.php"
+        search_params = {
+            "action": "query",
+            "list": "search",
+            "srsearch": f"{company_name} company",
+            "format": "json",
+            "srlimit": 1
+        }
+        
+        async with httpx.AsyncClient() as client:
+            headers = {"User-Agent": "BusinessVerificationBot/1.0 (contact: admin@example.com)"}
+            search_resp = await client.get(search_url, params=search_params, headers=headers, timeout=5.0)
+            search_data = search_resp.json()
+            
+            search_results = search_data.get("query", {}).get("search", [])
+            if not search_results:
+                return None
+            
+            page_title = search_results[0]["title"]
+            
+            # 2. Get the page summary
+            summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{page_title.replace(' ', '_')}"
+            summary_resp = await client.get(summary_url, headers=headers, timeout=5.0)
+            if summary_resp.status_code != 200:
+                return None
+                
+            summary_data = summary_resp.json()
+            
+            description = summary_data.get("extract", "")
+            if not description or len(description) < 50:
+                return None
+                
+            return {
+                "description": description,
+                "website": summary_data.get("content_urls", {}).get("desktop", {}).get("page"),
+                "company_name": summary_data.get("title", company_name),
+                "citation_sources": [
+                    {
+                        "title": f"{page_title} - Wikipedia",
+                        "url": summary_data.get("content_urls", {}).get("desktop", {}).get("page"),
+                        "publisher": "Wikipedia",
+                        "verified": True,
+                    }
+                ],
+            }
+    except Exception as e:
+        logger.warning(f"Wikipedia fetch failed for {company_name}: {e}")
+        return None
+
+
+async def _fetch_founders_search(company_name: str) -> List[Dict[str, Any]]:
+    """Specifically search for company founders and leadership."""
+    try:
+        from duckduckgo_search import DDGS
+        ddg = DDGS()
+        query = f"{company_name} founders leadership team CEO"
+        results = await asyncio.to_thread(lambda: list(ddg.text(query, max_results=5)))
+        
+        founders = []
+        # Simple extraction logic: look for "founded by", "founder", "CEO"
+        for res in results:
+            snippet = res.get("body", "")
+            # More flexible regex to find names
+            # Matches names like "Deepinder Goyal", "Steve Jobs", "Pankaj Chaddah"
+            patterns = [
+                r"(?:founded by|founder|co-founder|CEO|MD|Chairman)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
+                r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+(?:founded|started|is the CEO of)",
+            ]
+            for pattern in patterns:
+                matches = re.finditer(pattern, snippet, re.I)
+                for match in matches:
+                    name = match.group(1).strip()
+                    # Filter out some common non-name words that might be caught
+                    if name.lower() in ["the", "this", "our", "their", "company", "india", "private", "limited"]:
+                        continue
+                    if name not in [f["name"] for f in founders]:
+                        founders.append({
+                            "name": name,
+                            "biography": snippet[:300] + "...",
+                            "founding_role": "Founder" if any(x in snippet.lower() for x in ["founder", "started"]) else "Leadership",
+                            "current_position": "Executive",
+                            "source": "Web Search"
+                        })
+        return founders[:6]
+    except Exception as e:
+        logger.warning(f"Founders search failed for {company_name}: {e}")
+        return []
+
+
+async def _fetch_hq_search(company_name: str) -> Dict[str, Optional[str]]:
+    """Specifically search for company headquarters and address."""
+    try:
+        from duckduckgo_search import DDGS
+        ddg = DDGS()
+        query = f"{company_name} headquarters address location"
+        results = await asyncio.to_thread(lambda: list(ddg.text(query, max_results=3)))
+        
+        if results:
+            # Try to find a specific address or city
+            full_text = " ".join([r.get("body", "") for r in results])
+            
+            # Look for patterns like "located in [City]", "headquartered in [City]", or typical address formats
+            hq_match = re.search(r"(?:headquartered in|located in|offices in)\s+([A-Z][a-z]+(?:\s*,?\s*[A-Z][a-z]+)*)", full_text)
+            
+            address = hq_match.group(1) if hq_match else results[0].get("body", "")[:200]
+            
+            return {
+                "full_address": address,
+                "facility_details": "Corporate headquarters sourced from public web records.",
+                "map_query": f"{company_name} {address}" if address else f"{company_name} headquarters"
+            }
+    except Exception as e:
+        logger.warning(f"HQ search failed for {company_name}: {e}")
+    return {}
+
+
+async def _fetch_founding_date_search(company_name: str) -> Optional[str]:
+    """Specifically search for company founding date."""
+    try:
+        from duckduckgo_search import DDGS
+        ddg = DDGS()
+        query = f"{company_name} founded date established"
+        results = await asyncio.to_thread(lambda: list(ddg.text(query, max_results=3)))
+        
+        for res in results:
+            snippet = res.get("body", "")
+            # Look for years or dates
+            match = re.search(r"(?:founded in|established in|since)\s+(\d{4})", snippet, re.I)
+            if match:
+                return match.group(1)
+    except Exception as e:
+        logger.warning(f"Founding date search failed for {company_name}: {e}")
+    return None

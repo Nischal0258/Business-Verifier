@@ -21,6 +21,35 @@ interface RawCompanyData {
   verification_score: number;
   turnover_data: RawTurnoverItem[];
   company_history: string;
+  founder_profiles?: Array<{
+    name: string;
+    biography?: string | null;
+    founding_role?: string | null;
+    current_position?: string | null;
+    photo_url?: string | null;
+    source?: string | null;
+  }>;
+  headquarters_info?: {
+    full_address?: string | null;
+    founding_date?: string | null;
+    facility_details?: string | null;
+    map_query?: string | null;
+  };
+  global_operations?: Array<{
+    country: string;
+    office_locations?: string[];
+    service_offerings?: string[];
+    source?: string | null;
+  }>;
+  citation_sources?: Array<{
+    title: string;
+    url?: string | null;
+    publisher?: string | null;
+    verified?: boolean;
+  }>;
+  chapter_last_updated?: string | null;
+  employee_count?: number | null;
+  market_cap?: number | null;
 }
 
 interface ApiResponse<T> {
@@ -218,6 +247,23 @@ export async function fetchCompanyData(
           revenue: item.revenue ?? 0,
         })),
         company_history: raw.company_history,
+        founder_profiles: raw.founder_profiles || [],
+        headquarters_info: raw.headquarters_info || {},
+        global_operations: (raw.global_operations || []).map((op) => ({
+          country: op.country,
+          office_locations: op.office_locations || [],
+          service_offerings: op.service_offerings || [],
+          source: op.source ?? null,
+        })),
+        citation_sources: (raw.citation_sources || []).map((c) => ({
+          title: c.title,
+          url: c.url ?? null,
+          publisher: c.publisher ?? null,
+          verified: Boolean(c.verified),
+        })),
+        chapter_last_updated: raw.chapter_last_updated ?? null,
+        employee_count: raw.employee_count ?? null,
+        market_cap: raw.market_cap ?? null,
       };
     } catch (error) {
       lastError = error;
