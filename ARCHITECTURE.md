@@ -80,10 +80,11 @@ graph TD
 ### **The "Search to Result" Journey**
 1.  **User Initiation**: User submits a query via the [HeroSection](file:///c:/Users/Dell/Desktop/VC%20PROJECT/frontend/components/verifyiq/HeroSection.tsx).
 2.  **Frontend Dispatch**: [dashboard/page.tsx](file:///c:/Users/Dell/Desktop/VC%20PROJECT/frontend/app/dashboard/page.tsx) calls the `fetchCompanyData` utility.
-3.  **Backend Ingestion**: FastAPI endpoint `/api/company/{name}` receives the request.
+3.  **Backend Ingestion**: FastAPI endpoint `/api/verify/{company_name}` receives the request.
 4.  **Parallel Data Ingestion**:
     -   **Ticker Resolution**: Runs parallel checks for Indian (`.NS`, `.BO`) and global tickers.
     -   **Web Search**: Concurrent [Serper.dev](file:///c:/Users/Dell/Desktop/VC%20PROJECT/backend/data_engine/fetchers.py) call extracts Knowledge Graph and snippets.
+    -   **Financial Data Fetch**: Multi-source fallback chain (see Section 4).
 5.  **AI Transformation**: The [summarizer](file:///c:/Users/Dell/Desktop/VC%20PROJECT/backend/data_engine/summarizer.py) passes clean data fragments to Gemini 1.5 Flash.
 6.  **Persistence**: The audit log and search metadata are written to the [SQLite database](file:///c:/Users/Dell/Desktop/VC%20PROJECT/backend/config.py).
 7.  **Final Response**: A structured JSON object is returned to the client for rendering.
@@ -95,17 +96,27 @@ graph TD
 -   **Ticker Normalization**: Converts raw input (e.g., "Reliance") into market-standard symbols (e.g., "RELIANCE.NS").
 -   **Snippet Aggregation**: Concatenates multiple SERP snippets into a single context block for the LLM.
 -   **LRU Caching**: Implemented in [fetchers.py](file:///c:/Users/Dell/Desktop/VC%20PROJECT/backend/data_engine/fetchers.py) using `@functools.lru_cache` to store resolved tickers, reducing latency for repeat queries by 90%.
+-   **Financial Data Fallback Chain**: Multi-source financial data resolution with ordered fallback:
+    1. **Serper.dev** - Searches Google for revenue figures extracted via regex patterns
+    2. **DuckDuckGo** - Fallback search engine for private/unlisted companies
+    3. **Yahoo Finance (yfinance)** - Official income statement data for public companies
+    4. **Alpha Vantage** - INCOME_STATEMENT API (25 req/day free tier)
+    5. **Finnhub** - `/stock/financials` API with comprehensive metrics (60 req/sec free tier)
+-   **Revenue Extraction**: Regex patterns parse search snippets for revenue figures in multiple formats (crore, million, billion) and currencies (₹, $, USD).
 
 ---
 
 ## **5. Error Handling & Resilience**
 
--   **Graceful Fallbacks**: If Yahoo Finance fails, the system automatically escalates to Serper. If Serper fails, it uses DuckDuckGo.
--   **Timeout Strategy**: 
-    -   Financial Data: 5.0s
-    -   Search Data: 7.0s
+-   **Graceful Fallbacks**: Multi-source financial data fallback chain ensures maximum data retrieval:
+    - If Serper fails → DuckDuckGo → yfinance → Alpha Vantage → Finnhub
+    - If all sources fail → Returns "private company" response with empty revenue data
+-   **Timeout Strategy**:
+    -   Search Data (Serper/DuckDuckGo): 7.0s
+    -   Financial Data (yfinance): 5.0s
+    -   Financial APIs (Alpha Vantage/Finnhub): 15.0s
     -   LLM Synthesis: 10.0s
--   **Failure Scenario**: If all data sources fail, the backend returns a `status: unknown` response, which the frontend handles by displaying a user-friendly "Verification protocol failed" message.
+-   **Failure Scenario**: If all data sources fail, the backend returns a `status: unknown` response with empty `turnover_data`, which the frontend handles by displaying a user-friendly "Verification protocol failed" message.
 
 ---
 
