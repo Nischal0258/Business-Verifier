@@ -31,8 +31,11 @@ class Settings(BaseSettings):
         if isinstance(self.cors_origins, str):
             self.cors_origins = [origin.strip() for origin in self.cors_origins.split(",")]
         if not self.database_url:
-            db_path = "/data/business_verify.db"
-            os.makedirs("/data", exist_ok=True)
+            # Use a path relative to the backend folder
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            db_dir = os.path.join(base_dir, "data")
+            os.makedirs(db_dir, exist_ok=True)
+            db_path = os.path.join(db_dir, "business_verify.db")
             self.database_url = f"sqlite+aiosqlite:///{db_path}"
         return self
 

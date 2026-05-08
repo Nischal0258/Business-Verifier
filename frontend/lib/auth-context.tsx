@@ -64,6 +64,7 @@ export function AuthProvider({ children, onAuthStateChange }: AuthProviderProps)
 
   const handleAuthStateChange = useCallback(
     async (user: User | null) => {
+      // console.log("Auth state changed:", user?.email); // Removed for cleaner logs
       try {
         if (user) {
           const tokenResult = await getIdTokenResult(user);

@@ -8,6 +8,7 @@ from .fetchers import get_financials, get_registry_data
 from .models import CompanyReport
 from .summarizer import summarize_history
 from .verification import verify_company
+from .cache import report_cache
 
 logger = logging.getLogger(__name__)
 
@@ -18,27 +19,28 @@ async def generate_full_report(company_name: str) -> CompanyReport:
     This function concurrently fetches registry and financial data,
     runs the verification algorithm, and synthesises a company history.
     All data is sourced from real APIs (Yahoo Finance, Serper, web search).
-
-    Parameters
-    ----------
-    company_name:
-        The target company name or Yahoo Finance ticker.
-
-    Returns
-    -------
-    CompanyReport
-        Validated Pydantic model containing verification status, score,
-        turnover data, and company history.
     """
     logger.info("Starting full report generation for '%s'", company_name)
 
+    # 1. Check persistent cache first
+    cached_report = await report_cache.get(company_name)
+    if cached_report:
+        return cached_report
+
     try:
+        # 2. Fetch data in parallel
         registry_data, financial_data = await _fetch_parallel(company_name)
 
         real_name = registry_data.get("company_name", company_name)
+        
+        # 3. Parallelize Verification and Summarization
+        # We can start summarization while verification is running if they don't depend on each other's output
         is_verified, verification_score = verify_company(registry_data, financial_data)
+        
         raw_context = _build_raw_context(real_name, registry_data, financial_data)
         company_description = registry_data.get("description")
+        
+        # Summarization is often the slowest part after fetching
         company_history = await summarize_history(raw_context, company_description)
 
         report = CompanyReport(
@@ -57,6 +59,9 @@ async def generate_full_report(company_name: str) -> CompanyReport:
             employee_count=registry_data.get("employee_count"),
             market_cap=registry_data.get("market_cap"),
         )
+
+        # 3. Cache the result for future requests
+        await report_cache.set(company_name, report)
 
         logger.info(
             "Completed report for '%s' (verified=%s, score=%d, revenue_years=%d)",

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { ArrowRight, X, Mail, Lock, User, Eye, EyeOff, ShieldCheck, Play } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
@@ -30,11 +30,12 @@ function AuthModal({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleAuthSuccess = useCallback(() => {
-    if (user) {
+  // Auto-redirect if user becomes authenticated
+  useEffect(() => {
+    if (user && (mode === "login" || mode === "signup")) {
       router.push("/dashboard");
     }
-  }, [router, user]);
+  }, [user, mode, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +48,7 @@ function AuthModal({
       } else {
         await createUserWithEmailAndPassword(auth, email, password);
       }
-      handleAuthSuccess();
+      // router.push("/dashboard") will be handled by useEffect
     } catch (err: any) {
       const errorCode = err?.code;
       let errorMessage = err?.message || "An error occurred during authentication.";
@@ -75,8 +76,10 @@ function AuthModal({
       setError("");
       setLoading(true);
       const provider = new GoogleAuthProvider();
+      // Set custom parameters to force account selection if needed
+      provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, provider);
-      handleAuthSuccess();
+      // router.push("/dashboard") will be handled by useEffect
     } catch (err: any) {
       const errorCode = err?.code;
       let errorMessage = err?.message || "An error occurred with Google Sign-In.";

@@ -177,36 +177,36 @@ async def _resolve_ticker(company_name: str) -> Optional[str]:
 
 
 async def get_financials(ticker_or_name: str) -> List[Dict[str, Any]]:
-    """Fetch historical revenue data with fallback chain.
+    """Fetch historical revenue data with parallel execution and fallback.
 
-    Order: Serper → DuckDuckGo → yfinance → Alpha Vantage → Finnhub
-
-    Returns
-    -------
-    List[Dict[str, Any]]
-        List of ``{"year": int, "revenue": float, "note": str}`` dictionaries.
+    Order of preference for data: yfinance > Alpha Vantage > Finnhub > Serper > DuckDuckGo
     """
     company_name = ticker_or_name.strip()
 
     sources = [
-        ("Serper", _fetch_financials_serper),
-        ("DuckDuckGo", _fetch_financials_duckduckgo),
         ("yfinance", _fetch_financials_yfinance),
         ("Alpha Vantage", _fetch_financials_alpha_vantage),
         ("Finnhub", _fetch_financials_finnhub),
+        ("Serper", _fetch_financials_serper),
+        ("DuckDuckGo", _fetch_financials_duckduckgo),
     ]
 
-    for source_name, fetcher_func in sources:
-        try:
-            result = await fetcher_func(company_name)
-            if result:
-                logger.info(
-                    "Financial data fetched for '%s' via %s: %d records",
-                    company_name, source_name, len(result)
-                )
-                return result
-        except Exception as exc:
-            logger.warning("%s failed for '%s': %s", source_name, company_name, exc)
+    # Fire all fetchers in parallel with individual timeouts
+    tasks = []
+    for name, fetcher in sources:
+        tasks.append(asyncio.create_task(fetcher(company_name)))
+
+    # Wait for tasks with a total timeout
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Pick the best result based on source preference and data quality
+    for i, res in enumerate(results):
+        source_name = sources[i][0]
+        if isinstance(res, list) and res:
+            logger.info("Using financial data from %s for '%s'", source_name, company_name)
+            return res
+        elif isinstance(res, Exception):
+            logger.debug("%s failed for '%s': %s", source_name, company_name, res)
 
     logger.warning("All financial data sources exhausted for '%s'. Returning private company response.", company_name)
     return _private_company_response(company_name)
@@ -229,7 +229,7 @@ async def _fetch_financials_serper(company_name: str) -> Optional[List[Dict[str,
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers, timeout=10.0)
+            response = await client.post(url, json=payload, headers=headers, timeout=7.0)
             response.raise_for_status()
             search_data = response.json()
 
@@ -433,7 +433,7 @@ async def _fetch_financials_alpha_vantage(company_name: str) -> Optional[List[Di
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params, timeout=15.0)
+            response = await client.get(url, params=params, timeout=10.0)
             response.raise_for_status()
             data = response.json()
 
@@ -544,21 +544,7 @@ def _private_company_response(company_name: str) -> List[Dict[str, Any]]:
 
 
 async def get_registry_data(company_name: str) -> Dict[str, Any]:
-    """Fetch real company information using yfinance and web search.
-
-    Returns actual company metadata (industry, sector, country, etc.)
-    instead of hardcoded mock data.
-
-    Parameters
-    ----------
-    company_name:
-        The name of the company to query.
-
-    Returns
-    -------
-    Dict[str, Any]
-        Registry data with real company information.
-    """
+    """Fetch company information using parallel sources (yfinance, Wikipedia, Serper)."""
     logger.info("Fetching registry data for '%s'", company_name)
 
     result: Dict[str, Any] = {
@@ -586,46 +572,33 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
         "chapter_last_updated": datetime.utcnow().isoformat() + "Z",
     }
 
-    # Try yfinance for company info
-    ticker_symbol = await _resolve_ticker(company_name)
+    # Start all discovery tasks in parallel
+    discovery_tasks = [
+        asyncio.create_task(_fetch_registry_yfinance(company_name)),
+        asyncio.create_task(_fetch_wikipedia_data(company_name)),
+    ]
+    if settings.serper_api_key:
+        discovery_tasks.append(asyncio.create_task(_fetch_serper_data(company_name)))
 
-    if ticker_symbol:
-        try:
-            # Use a timeout for yfinance calls
-            ticker = await asyncio.to_thread(yf.Ticker, ticker_symbol)
-            info = await asyncio.wait_for(asyncio.to_thread(lambda: ticker.info), timeout=5.0)
-
-            if info:
-                result["company_name"] = info.get("longName") or info.get("shortName") or company_name
-                result["status"] = "active" if info.get("marketCap") else "unknown"
-                result["jurisdiction"] = info.get("country", None)
-                result["country"] = info.get("country", None)
-                result["industry"] = info.get("industry", None)
-                result["sector"] = info.get("sector", None)
-                result["website"] = info.get("website", None)
-                result["description"] = info.get("longBusinessSummary", None)
-                result["employees"] = info.get("fullTimeEmployees", None)
-                result["ceo"] = None  # yfinance doesn't reliably provide this
-                result["ticker"] = ticker_symbol
-                result["founder_profiles"] = _extract_founder_profiles(info)
-                result["headquarters_info"] = _extract_headquarters_info(info, result["registration_date"])
-
-                # Market cap
-                mc = info.get("marketCap")
-                if mc:
-                    result["market_cap"] = mc
-                    result["status"] = "active"
-                result["employee_count"] = info.get("fullTimeEmployees")
-
-                logger.info(
-                    "Got real company info for '%s': industry=%s, country=%s, employees=%s",
-                    company_name,
-                    result["industry"],
-                    result["country"],
-                    result["employees"],
-                )
-        except Exception as exc:
-            logger.warning("yfinance info lookup failed for '%s': %s", company_name, exc)
+    # Wait for initial discovery with a timeout
+    discovery_results = await asyncio.gather(*discovery_tasks, return_exceptions=True)
+    
+    # Merge results (yfinance > Serper > Wikipedia)
+    # yfinance results
+    yf_res = discovery_results[0]
+    if isinstance(yf_res, dict) and yf_res:
+        result.update(yf_res)
+        result["status"] = "active"
+    
+    # Wikipedia and Serper results
+    for i in range(1, len(discovery_results)):
+        res = discovery_results[i]
+        if isinstance(res, dict) and res:
+            # Merge missing fields
+            for key, val in res.items():
+                if not result.get(key) and val:
+                    result[key] = val
+            result["status"] = "found"
 
     # Fallback/Supplemental search for missing critical info
     missing_critical = []
@@ -659,75 +632,35 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
         if "founders" in missing_critical and supp_results[0]:
             result["founder_profiles"] = supp_results[0]
         if "headquarters" in missing_critical and supp_results[1]:
-            # Merge with existing if any
             result["headquarters_info"].update(supp_results[1])
         if "founding_date" in missing_critical and supp_results[2]:
             result["registration_date"] = supp_results[2]
             result["headquarters_info"]["founding_date"] = supp_results[2]
 
-    # If still no data, try Wikipedia, Serper.dev and DuckDuckGo in parallel if possible
+    # Final fallback to DuckDuckGo if still unknown
     if result["status"] == "unknown":
-        tasks = []
-        tasks.append(asyncio.create_task(_fetch_wikipedia_data(company_name)))
-        if settings.serper_api_key:
-            tasks.append(asyncio.create_task(_fetch_serper_data(company_name)))
-        
-        if tasks:
-            done, pending = await asyncio.wait(tasks, timeout=7.0)
-            for task in done:
-                res = task.result()
-                if res:
-                    result.update(res)
-                    result["status"] = "found"
-                    break
-            # Cancel pending tasks
-            for task in pending:
-                task.cancel()
-        
-        # Final fallback to DuckDuckGo if still unknown
-        if result["status"] == "unknown":
-            try:
-                from duckduckgo_search import DDGS
-
-                ddg = DDGS()
-                # Try a more targeted search for Indian companies if context suggests it
-                search_query = f"{company_name} company information India founded"
-                search_results = await asyncio.to_thread(
-                    lambda: list(ddg.text(search_query, max_results=5))
+        try:
+            from duckduckgo_search import DDGS
+            ddg = DDGS()
+            search_query = f"{company_name} company information India founded"
+            search_results = await asyncio.to_thread(lambda: list(ddg.text(search_query, max_results=5)))
+            
+            if search_results:
+                snippets = " ".join(r.get("body", "") for r in search_results)
+                result["description"] = snippets[:800]
+                result["status"] = "found"
+                result["global_operations"] = _build_global_operations(
+                    snippets,
+                    fallback_country=result.get("country"),
+                    city=result.get("headquarters_info", {}).get("map_query"),
+                    industry=result.get("industry"),
+                    sector=result.get("sector"),
                 )
-                
-                if not search_results:
-                    # Fallback to general search
-                    search_results = await asyncio.to_thread(
-                        lambda: list(ddg.text(f"{company_name} company profile overview", max_results=3))
-                    )
+                result["citation_sources"].extend(_citation_from_duckduckgo(search_results))
+        except Exception as exc:
+            logger.warning("DuckDuckGo search failed for '%s': %s", company_name, exc)
 
-                if search_results:
-                    # Combine snippets for context
-                    snippets = " ".join(r.get("body", "") for r in search_results)
-                    result["description"] = snippets[:800]
-                    result["status"] = "found"
-                    result["global_operations"] = _build_global_operations(
-                        snippets,
-                        fallback_country=result.get("country"),
-                        city=result.get("headquarters_info", {}).get("map_query"),
-                        industry=result.get("industry"),
-                        sector=result.get("sector"),
-                    )
-                    result["citation_sources"].extend(
-                        _citation_from_duckduckgo(search_results)
-                    )
-                    
-                    # Try to extract website from search results
-                    for r in search_results:
-                        href = r.get("href", "")
-                        if href and not any(x in href.lower() for x in ["duckduckgo", "facebook", "twitter", "linkedin"]):
-                            result["website"] = href
-                            break
-
-            except Exception as exc:
-                logger.warning("DuckDuckGo search failed for '%s': %s", company_name, exc)
-
+    # Post-processing for global operations
     if not result.get("global_operations"):
         fallback_country = result.get("country")
         if fallback_country:
@@ -740,18 +673,36 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
                 }
             ]
 
-    if not result.get("citation_sources") and result.get("website"):
-        result["citation_sources"] = [
-            {
-                "title": f"{result.get('company_name', company_name)} official website",
-                "url": result.get("website"),
-                "publisher": "Company",
-                "verified": True,
-            }
-        ]
-
     result["chapter_last_updated"] = datetime.utcnow().isoformat() + "Z"
     return result
+
+
+async def _fetch_registry_yfinance(company_name: str) -> Optional[Dict[str, Any]]:
+    """Helper to fetch yfinance data for registry."""
+    ticker_symbol = await _resolve_ticker(company_name)
+    if not ticker_symbol:
+        return None
+
+    try:
+        ticker = await asyncio.to_thread(yf.Ticker, ticker_symbol)
+        info = await asyncio.wait_for(asyncio.to_thread(lambda: ticker.info), timeout=5.0)
+        if info:
+            return {
+                "company_name": info.get("longName") or info.get("shortName") or company_name,
+                "country": info.get("country"),
+                "industry": info.get("industry"),
+                "sector": info.get("sector"),
+                "website": info.get("website"),
+                "description": info.get("longBusinessSummary"),
+                "employees": info.get("fullTimeEmployees"),
+                "market_cap": info.get("marketCap"),
+                "ticker": ticker_symbol,
+                "founder_profiles": _extract_founder_profiles(info),
+                "headquarters_info": _extract_headquarters_info(info, None),
+            }
+    except Exception as e:
+        logger.debug(f"yfinance registry fetch failed: {e}")
+    return None
 
 
 def _normalize_whitespace(value: Optional[str]) -> Optional[str]:
@@ -914,7 +865,7 @@ async def _fetch_serper_data(company_name: str) -> Optional[Dict[str, Any]]:
     try:
         logger.info(f"Querying Serper.dev for: {company_name}")
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers, timeout=10.0)
+            response = await client.post(url, json=payload, headers=headers, timeout=7.0)
             response.raise_for_status()
             search_data = response.json()
 
