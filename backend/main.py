@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 
+import httpx
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -227,12 +228,22 @@ async def verify_company(company_name: str, db: AsyncSession = Depends(get_db)):
         
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error verifying company {company_name}: {e}")
+    except httpx.HTTPError as e:
+        logger.error(f"Network error verifying company {company_name}: {e}")
         return ApiResponse(
             success=False,
             data=None,
-            error=f"Internal server error: {str(e)}",
+            error=f"Network error: Could not reach data sources. Please check your internet connection and try again. Details: {str(e)[:100]}",
+            metadata=None
+        )
+    except Exception as e:
+        logger.error(f"Error verifying company {company_name}: {e}")
+        import traceback
+        traceback.print_exc()
+        return ApiResponse(
+            success=False,
+            data=None,
+            error=f"Verification failed: {str(e)[:150]}",
             metadata=None
         )
 

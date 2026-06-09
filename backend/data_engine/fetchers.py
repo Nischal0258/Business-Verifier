@@ -4,11 +4,13 @@ import asyncio
 import logging
 import re
 import functools
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
+from urllib.parse import urljoin, urlparse
 
 import yfinance as yf
 import httpx
+from bs4 import BeautifulSoup
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -268,32 +270,45 @@ def _extract_revenue_from_snippets(results: List[Dict], source: str) -> List[Dic
     records = []
     years_found = set()
 
-    revenue_patterns = [
-        r"(?:revenue|sales|revenue of|income|turnover|net worth)\s*(?:of|data)?\s*(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(?:crore|cr|million|m|bn|billion|b|trillion|tr|t)",
-        r"(?:Rs\.?|USD|\$|₹)\s*([\d,.]+)\s*(?:crore|cr|million|m|bn|billion|b|trillion|tr|t)",
-        r"([\d,.]+)\s*(?:crore|cr|million|bn|billion)\s*(?:revenue|sales|turnover)?",
-        r"FY(\d{2,4})[:\s]+(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
-        r"(\d{4})\s+(?:revenue|turnover|sales)\s+(?:of\s+)?(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
-        r"(?:revenue|turnover|sales)\s+in\s+(\d{4})\s+(?:was\s+)?(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
+    # Pattern format: (regex, value_group_idx, unit_group_idx, year_group_idx)
+    patterns = [
+        # "revenue of 100 crore in 2023"
+        (r"(?:revenue|sales|income|turnover|net worth)\s*(?:of|data)?\s*(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(crore|cr|million|m|bn|billion|b|trillion|tr|t)?\b(?:\s+in\s+(\d{4}))?", 1, 2, 3),
+        # "FY2023: 100 crore"
+        (r"FY(\d{2,4})[:\s]+(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(crore|cr|million|m|bn|billion|b|trillion|tr|t)?\b", 2, 3, 1),
+        # "2023 revenue of 100 crore"
+        (r"(\d{4})\s+(?:revenue|turnover|sales|income)\s+(?:of\s+)?(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(crore|cr|million|m|bn|billion|b|trillion|tr|t)?\b", 2, 3, 1),
+        # "Revenue in 2023 was 100 crore"
+        (r"(?:revenue|turnover|sales|income)\s+in\s+(\d{4})\s+(?:was\s+)?(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(crore|cr|million|m|bn|billion|b|trillion|tr|t)?\b", 2, 3, 1),
+        # Just "$100 million" (no year)
+        (r"(?:Rs\.?|USD|\$|₹|INR)\s*([\d,.]+)\s*(crore|cr|million|m|bn|billion|b|trillion|tr|t)\b", 1, 2, None),
     ]
 
     for result in results:
         snippet = result.get("snippet", "") or result.get("body", "") or ""
 
-        for pattern in revenue_patterns:
-            matches = re.finditer(pattern, snippet, re.IGNORECASE)
+        for pattern_res, v_idx, u_idx, y_idx in patterns:
+            matches = re.finditer(pattern_res, snippet, re.IGNORECASE)
             for match in matches:
                 try:
-                    if match.lastindex == 2:
-                        year_str = match.group(1)
-                        value_str = match.group(2)
-                        year = int(year_str) if len(year_str) == 4 else 2000 + int(year_str) if len(year_str) == 2 else None
-                    else:
-                        value_str = match.group(1)
-                        year = None
+                    value_str = match.group(v_idx)
+                    unit_str = match.group(u_idx) if u_idx and match.group(u_idx) else ""
+                    
+                    year = None
+                    if y_idx:
+                        y_str = match.group(y_idx)
+                        if y_str:
+                            year = int(y_str) if len(y_str) == 4 else 2000 + int(y_str)
+                    
+                    if not year:
+                        # Look for a year in the snippet if not in the match
+                        year_match = re.search(r"\b(20\d{2})\b", snippet)
+                        if year_match:
+                            year = int(year_match.group(1))
 
                     if year and year not in years_found and 1990 <= year <= 2030:
-                        value = _parse_revenue_value(value_str)
+                        combined_val = f"{value_str} {unit_str}".strip()
+                        value = _parse_revenue_value(combined_val)
                         if value and value > 0:
                             records.append({
                                 "year": year,
@@ -301,7 +316,7 @@ def _extract_revenue_from_snippets(results: List[Dict], source: str) -> List[Dic
                                 "note": f"Extracted from {source} search"
                             })
                             years_found.add(year)
-                except (ValueError, AttributeError):
+                except (ValueError, AttributeError, IndexError):
                     continue
 
     if records:
@@ -543,6 +558,108 @@ def _private_company_response(company_name: str) -> List[Dict[str, Any]]:
     }]
 
 
+async def _scrape_company_website(url: str) -> Dict[str, Any]:
+    """Scrape company website for CEO, founders, and services."""
+    if not url:
+        return {}
+
+    logger.info(f"Attempting to scrape website: {url}")
+    scraped_data: Dict[str, Any] = {
+        "founder_profiles": [],
+        "ceo": None,
+        "global_operations": [],
+        "description": None,
+        "service_offerings": []
+    }
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, headers=headers, timeout=10.0) as client:
+            # 1. Fetch homepage
+            response = await client.get(url)
+            if response.status_code != 200:
+                return {}
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            # Extract basic description from meta tags
+            meta_desc = soup.find("meta", attrs={"name": "description"})
+            if meta_desc:
+                scraped_data["description"] = meta_desc.get("content")
+
+            # 2. Find links to "About", "Team", "Management", "Leadership"
+            about_links = []
+            for a in soup.find_all("a", href=True):
+                text = a.get_text().lower()
+                href = a["href"].lower()
+                if any(kw in text or kw in href for kw in ["about", "team", "leadership", "management", "contact", "careers"]):
+                    full_url = urljoin(url, a["href"])
+                    if urlparse(full_url).netloc == urlparse(url).netloc:
+                        about_links.append(full_url)
+            
+            # De-duplicate and limit
+            about_links = list(set(about_links))[:3]
+            
+            # 3. Scrape "About" pages for people and locations
+            all_text = soup.get_text()
+            for link in about_links:
+                try:
+                    res = await client.get(link)
+                    if res.status_code == 200:
+                        page_soup = BeautifulSoup(res.text, "html.parser")
+                        all_text += " " + page_soup.get_text()
+                except:
+                    continue
+
+            # 4. Heuristic extraction from text
+            # Look for CEO
+            ceo_match = re.search(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s*(?:is the|as|serves as)\s*(?:CEO|Chief Executive Officer|Managing Director)", all_text, re.I)
+            if ceo_match:
+                scraped_data["ceo"] = ceo_match.group(1).strip()
+
+            # Look for Founders
+            founder_matches = re.finditer(r"(?:founded by|founders?|co-founder)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", all_text, re.I)
+            for m in founder_matches:
+                name = m.group(1).strip()
+                if name not in [f["name"] for f in scraped_data["founder_profiles"]]:
+                    scraped_data["founder_profiles"].append({
+                        "name": name,
+                        "founding_role": "Founder",
+                        "source": "Website Scrape"
+                    })
+
+            # Look for locations (simple city/country extraction)
+            # This uses the _COUNTRY_HINTS already defined in the file
+            for country in _COUNTRY_HINTS:
+                if country in all_text and country not in [op["country"] for op in scraped_data["global_operations"]]:
+                    scraped_data["global_operations"].append({
+                        "country": country,
+                        "source": "Website Scrape"
+                    })
+
+            # Look for Products/Services
+            product_keywords = ["product", "service", "solution", "offering", "platform", "software"]
+            for kw in product_keywords:
+                # Find sentences containing product keywords
+                matches = re.finditer(fr"[^.!?]*\b{kw}s?\b[^.!?]*[.!?]", all_text, re.I)
+                for m in matches:
+                    snippet = m.group(0).strip()
+                    if len(snippet) > 20 and len(snippet) < 150:
+                        if snippet not in scraped_data["service_offerings"]:
+                            scraped_data["service_offerings"].append(snippet)
+            
+            scraped_data["service_offerings"] = scraped_data["service_offerings"][:5]
+
+            return scraped_data
+
+    except Exception as e:
+        logger.warning(f"Website scraping failed for {url}: {e}")
+        return {}
+
+
 async def get_registry_data(company_name: str) -> Dict[str, Any]:
     """Fetch company information using parallel sources (yfinance, Wikipedia, Serper)."""
     logger.info("Fetching registry data for '%s'", company_name)
@@ -576,6 +693,7 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
     discovery_tasks = [
         asyncio.create_task(_fetch_registry_yfinance(company_name)),
         asyncio.create_task(_fetch_wikipedia_data(company_name)),
+        asyncio.create_task(_fetch_crunchbase_search(company_name)),
     ]
     if settings.serper_api_key:
         discovery_tasks.append(asyncio.create_task(_fetch_serper_data(company_name)))
@@ -583,14 +701,14 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
     # Wait for initial discovery with a timeout
     discovery_results = await asyncio.gather(*discovery_tasks, return_exceptions=True)
     
-    # Merge results (yfinance > Serper > Wikipedia)
+    # Merge results (yfinance > Serper > Crunchbase > Wikipedia)
     # yfinance results
     yf_res = discovery_results[0]
     if isinstance(yf_res, dict) and yf_res:
         result.update(yf_res)
         result["status"] = "active"
     
-    # Wikipedia and Serper results
+    # Merge other results in order of preference
     for i in range(1, len(discovery_results)):
         res = discovery_results[i]
         if isinstance(res, dict) and res:
@@ -598,7 +716,43 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
             for key, val in res.items():
                 if not result.get(key) and val:
                     result[key] = val
-            result["status"] = "found"
+            if result["status"] == "unknown":
+                result["status"] = "found"
+
+    # Website Scraping (Deep Dive)
+    if result.get("website"):
+        scraped = await _scrape_company_website(result["website"])
+        if scraped:
+            # Update CEO if missing
+            if not result.get("ceo"):
+                result["ceo"] = scraped.get("ceo")
+            
+            # Merge founders
+            for sf in scraped.get("founder_profiles", []):
+                if sf["name"] not in [f["name"] for f in result["founder_profiles"]]:
+                    result["founder_profiles"].append(sf)
+            
+            # Merge global operations (simplified logic)
+            scraped_ops = scraped.get("global_operations", [])
+            for sc_op in scraped_ops:
+                sc_country = sc_op.get("country")
+                if sc_country:
+                    existing_countries = [g.get("country") for g in result["global_operations"]]
+                    if sc_country not in existing_countries:
+                        result["global_operations"].append(sc_op)
+
+            # Update description if better
+            if scraped.get("description") and (not result.get("description") or len(scraped["description"]) > len(result.get("description", ""))):
+                result["description"] = scraped["description"]
+
+            # Add services to global operations if they exist
+            if scraped.get("service_offerings"):
+                if not result.get("global_operations"):
+                    result["global_operations"] = [{"country": result.get("country") or "Global", "service_offerings": scraped["service_offerings"]}]
+                else:
+                    for op in result["global_operations"]:
+                        if "service_offerings" not in op or not op["service_offerings"]:
+                            op["service_offerings"] = scraped["service_offerings"]
 
     # Fallback/Supplemental search for missing critical info
     missing_critical = []
@@ -642,12 +796,13 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
         try:
             from duckduckgo_search import DDGS
             ddg = DDGS()
-            search_query = f"{company_name} company information India founded"
+            # Generalize search query to support global companies, not just India
+            search_query = f"{company_name} company profile information founded headquarters"
             search_results = await asyncio.to_thread(lambda: list(ddg.text(search_query, max_results=5)))
             
             if search_results:
                 snippets = " ".join(r.get("body", "") for r in search_results)
-                result["description"] = snippets[:800]
+                result["description"] = snippets[:1000]
                 result["status"] = "found"
                 result["global_operations"] = _build_global_operations(
                     snippets,
@@ -809,15 +964,16 @@ def _build_global_operations(
 
 def _citation_from_organic(organic: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     citations: List[Dict[str, Any]] = []
-    for item in organic[:6]:
+    for item in organic[:8]:  # Increased to show more related sites
         link = item.get("link")
         title = item.get("title")
+        snippet = item.get("snippet", "")
         if not link or not title:
             continue
         publisher = re.sub(r"^www\.", "", link.split("/")[2]) if "://" in link else "Web"
         citations.append(
             {
-                "title": title[:140],
+                "title": f"{title} - {snippet[:60]}...", # Include snippet preview for better context
                 "url": link,
                 "publisher": publisher,
                 "verified": True,
@@ -852,9 +1008,8 @@ async def _fetch_serper_data(company_name: str) -> Optional[Dict[str, Any]]:
         return None
 
     url = "https://google.serper.dev/search"
-    # Enhanced query to catch corporate info specifically
     payload = {
-        "q": f"{company_name} corporate profile about us founded headquarters website",
+        "q": f"{company_name} corporate profile about us founded headquarters website products services CEO",
         "num": 10
     }
     headers = {
@@ -869,7 +1024,9 @@ async def _fetch_serper_data(company_name: str) -> Optional[Dict[str, Any]]:
             response.raise_for_status()
             search_data = response.json()
 
-            # 1. Check Knowledge Graph first (best for famous companies like Colgate)
+            result_data: Dict[str, Any] = {}
+
+            # 1. Check Knowledge Graph (Google's best data)
             kg = search_data.get("knowledgeGraph", {})
             if kg:
                 description = kg.get("description", "")
@@ -877,13 +1034,20 @@ async def _fetch_serper_data(company_name: str) -> Optional[Dict[str, Any]]:
                 if description:
                     logger.info(f"Found {company_name} in Knowledge Graph")
                     hq_location = kg.get("headquarters") or kg.get("headquarter") or kg.get("founded")
-                    snippets_for_ops = f"{description} {kg.get('descriptionSource', '')}"
-                    return {
+                    
+                    # Extract CEO and Founders if present in KG attributes
+                    attributes = kg.get("attributes", {})
+                    ceo = attributes.get("CEO") or attributes.get("Chief Executive Officer")
+                    founders = attributes.get("Founders") or attributes.get("Founder")
+                    
+                    result_data.update({
                         "description": description,
                         "website": website,
                         "company_name": kg.get("title", company_name),
+                        "ceo": ceo,
+                        "industry": attributes.get("Industry"),
                         "global_operations": _build_global_operations(
-                            snippets_for_ops,
+                            f"{description} {kg.get('descriptionSource', '')}",
                             fallback_country=None,
                             city=hq_location,
                             industry=None,
@@ -891,53 +1055,43 @@ async def _fetch_serper_data(company_name: str) -> Optional[Dict[str, Any]]:
                         ),
                         "citation_sources": [
                             {
-                                "title": f"{kg.get('title', company_name)} knowledge graph profile",
-                                "url": website,
+                                "title": f"{kg.get('title', company_name)} (Knowledge Graph)",
+                                "url": website or kg.get("descriptionLink"),
                                 "publisher": "Google Knowledge Graph",
                                 "verified": True,
                             }
                         ],
-                    }
+                    })
+                    
+                    if founders:
+                        result_data["founder_profiles"] = [
+                            {"name": f.strip(), "source": "Google KG"} for f in str(founders).split(",")
+                        ]
 
-            # 2. Process organic results
+            # 2. Process organic results (Citations and Related Sites)
             organic = search_data.get("organic", [])
-            if not organic:
-                logger.warning(f"Serper returned no organic results for {company_name}")
-                return None
+            if organic:
+                # Add organic results as citations (Related Sites as requested)
+                citations = _citation_from_organic(organic)
+                if "citation_sources" in result_data:
+                    result_data["citation_sources"].extend(citations)
+                else:
+                    result_data["citation_sources"] = citations
 
-            # Extract info from snippets
-            description_parts = []
-            for r in organic[:5]:
-                snippet = r.get("snippet", "")
-                if snippet and len(snippet) > 20:
-                    description_parts.append(snippet)
-            
-            description = " ".join(description_parts)
-            
-            # 3. Find official website
-            website = None
-            for r in organic:
-                link = r.get("link", "")
-                # Prioritize links that aren't social media or aggregators
-                if link and not any(x in link.lower() for x in ["linkedin", "facebook", "twitter", "crunchbase", "wikipedia", "youtube", "instagram", "glassdoor", "bloomberg"]):
-                    website = link
-                    break
-            
-            if not website and organic:
-                website = organic[0].get("link")
+                # If no website found in KG, try organic
+                if not result_data.get("website"):
+                    for r in organic:
+                        link = r.get("link", "")
+                        if link and not any(x in link.lower() for x in ["linkedin", "facebook", "twitter", "crunchbase", "wikipedia"]):
+                            result_data["website"] = link
+                            break
 
-            return {
-                "description": description[:2000],
-                "website": website,
-                "global_operations": _build_global_operations(
-                    description,
-                    fallback_country=None,
-                    city=None,
-                    industry=None,
-                    sector=None,
-                ),
-                "citation_sources": _citation_from_organic(organic),
-            }
+                # Extract more description context from organic snippets
+                if not result_data.get("description"):
+                    snippets = " ".join([r.get("snippet", "") for r in organic[:5]])
+                    result_data["description"] = snippets[:2000]
+
+            return result_data if result_data else None
 
     except Exception as e:
         logger.error(f"Serper API request failed for {company_name}: {e}")
@@ -996,6 +1150,25 @@ async def _fetch_wikipedia_data(company_name: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Wikipedia fetch failed for {company_name}: {e}")
         return None
+
+
+async def _fetch_crunchbase_search(company_name: str) -> Optional[Dict[str, Any]]:
+    """Specifically search for company info on Crunchbase/LinkedIn."""
+    try:
+        from duckduckgo_search import DDGS
+        ddg = DDGS()
+        query = f"{company_name} site:crunchbase.com OR site:linkedin.com/company"
+        results = await asyncio.to_thread(lambda: list(ddg.text(query, max_results=3)))
+        
+        if results:
+            snippets = " ".join([r.get("body", "") for r in results])
+            return {
+                "description": snippets[:1000],
+                "citation_sources": _citation_from_duckduckgo(results)
+            }
+    except Exception as e:
+        logger.debug(f"Crunchbase/LinkedIn search failed: {e}")
+    return None
 
 
 async def _fetch_founders_search(company_name: str) -> List[Dict[str, Any]]:

@@ -2,10 +2,11 @@ services:
   - type: web
     name: verifyiq-api
     env: python
+    rootDirectory: backend
     region: oregon
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn working_server:app --host 0.0.0.0 --port $PORT --log-level info
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --log-level info
     healthCheckPath: /health
     envVars:
       - key: GEMINI_API_KEY
@@ -18,6 +19,7 @@ services:
   - type: web
     name: business-verifier-frontend
     env: node
+    rootDirectory: frontend
     region: oregon
     plan: free
     buildCommand: npm install && npm run build

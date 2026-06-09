@@ -31,8 +31,9 @@ except Exception as e:
 print("Testing main.py import...", file=sys.stderr)
 try:
     # Change to backend directory to ensure proper imports
-    os.chdir('/opt/render/project/src/backend')
-    sys.path.insert(0, '/opt/render/project/src/backend')
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(base_dir)
+    sys.path.insert(0, base_dir)
     
     # Try to import main module
     import main
