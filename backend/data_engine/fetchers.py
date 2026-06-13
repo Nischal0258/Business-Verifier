@@ -270,45 +270,32 @@ def _extract_revenue_from_snippets(results: List[Dict], source: str) -> List[Dic
     records = []
     years_found = set()
 
-    # Pattern format: (regex, value_group_idx, unit_group_idx, year_group_idx)
-    patterns = [
-        # "revenue of 100 crore in 2023"
-        (r"(?:revenue|sales|income|turnover|net worth)\s*(?:of|data)?\s*(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(crore|cr|million|m|bn|billion|b|trillion|tr|t)?\b(?:\s+in\s+(\d{4}))?", 1, 2, 3),
-        # "FY2023: 100 crore"
-        (r"FY(\d{2,4})[:\s]+(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(crore|cr|million|m|bn|billion|b|trillion|tr|t)?\b", 2, 3, 1),
-        # "2023 revenue of 100 crore"
-        (r"(\d{4})\s+(?:revenue|turnover|sales|income)\s+(?:of\s+)?(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(crore|cr|million|m|bn|billion|b|trillion|tr|t)?\b", 2, 3, 1),
-        # "Revenue in 2023 was 100 crore"
-        (r"(?:revenue|turnover|sales|income)\s+in\s+(\d{4})\s+(?:was\s+)?(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(crore|cr|million|m|bn|billion|b|trillion|tr|t)?\b", 2, 3, 1),
-        # Just "$100 million" (no year)
-        (r"(?:Rs\.?|USD|\$|₹|INR)\s*([\d,.]+)\s*(crore|cr|million|m|bn|billion|b|trillion|tr|t)\b", 1, 2, None),
+    revenue_patterns = [
+        r"(?:revenue|sales|revenue of|income|turnover|net worth)\s*(?:of|data)?\s*(?:Rs\.?|USD|\$|₹|INR)?\s*([\d,.]+)\s*(?:crore|cr|million|m|bn|billion|b|trillion|tr|t)",
+        r"(?:Rs\.?|USD|\$|₹)\s*([\d,.]+)\s*(?:crore|cr|million|m|bn|billion|b|trillion|tr|t)",
+        r"([\d,.]+)\s*(?:crore|cr|million|bn|billion)\s*(?:revenue|sales|turnover)?",
+        r"FY(\d{2,4})[:\s]+(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
+        r"(\d{4})\s+(?:revenue|turnover|sales)\s+(?:of\s+)?(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
+        r"(?:revenue|turnover|sales)\s+in\s+(\d{4})\s+(?:was\s+)?(?:Rs\.?|USD|\$|₹)?\s*([\d,.]+)",
     ]
 
     for result in results:
         snippet = result.get("snippet", "") or result.get("body", "") or ""
 
-        for pattern_res, v_idx, u_idx, y_idx in patterns:
-            matches = re.finditer(pattern_res, snippet, re.IGNORECASE)
+        for pattern in revenue_patterns:
+            matches = re.finditer(pattern, snippet, re.IGNORECASE)
             for match in matches:
                 try:
-                    value_str = match.group(v_idx)
-                    unit_str = match.group(u_idx) if u_idx and match.group(u_idx) else ""
-                    
-                    year = None
-                    if y_idx:
-                        y_str = match.group(y_idx)
-                        if y_str:
-                            year = int(y_str) if len(y_str) == 4 else 2000 + int(y_str)
-                    
-                    if not year:
-                        # Look for a year in the snippet if not in the match
-                        year_match = re.search(r"\b(20\d{2})\b", snippet)
-                        if year_match:
-                            year = int(year_match.group(1))
+                    if match.lastindex == 2:
+                        year_str = match.group(1)
+                        value_str = match.group(2)
+                        year = int(year_str) if len(year_str) == 4 else 2000 + int(year_str) if len(year_str) == 2 else None
+                    else:
+                        value_str = match.group(1)
+                        year = None
 
                     if year and year not in years_found and 1990 <= year <= 2030:
-                        combined_val = f"{value_str} {unit_str}".strip()
-                        value = _parse_revenue_value(combined_val)
+                        value = _parse_revenue_value(value_str)
                         if value and value > 0:
                             records.append({
                                 "year": year,
@@ -316,7 +303,7 @@ def _extract_revenue_from_snippets(results: List[Dict], source: str) -> List[Dic
                                 "note": f"Extracted from {source} search"
                             })
                             years_found.add(year)
-                except (ValueError, AttributeError, IndexError):
+                except (ValueError, AttributeError):
                     continue
 
     if records:
@@ -693,7 +680,6 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
     discovery_tasks = [
         asyncio.create_task(_fetch_registry_yfinance(company_name)),
         asyncio.create_task(_fetch_wikipedia_data(company_name)),
-        asyncio.create_task(_fetch_crunchbase_search(company_name)),
     ]
     if settings.serper_api_key:
         discovery_tasks.append(asyncio.create_task(_fetch_serper_data(company_name)))
@@ -701,14 +687,14 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
     # Wait for initial discovery with a timeout
     discovery_results = await asyncio.gather(*discovery_tasks, return_exceptions=True)
     
-    # Merge results (yfinance > Serper > Crunchbase > Wikipedia)
+    # Merge results (yfinance > Serper > Wikipedia)
     # yfinance results
     yf_res = discovery_results[0]
     if isinstance(yf_res, dict) and yf_res:
         result.update(yf_res)
         result["status"] = "active"
     
-    # Merge other results in order of preference
+    # Wikipedia and Serper results
     for i in range(1, len(discovery_results)):
         res = discovery_results[i]
         if isinstance(res, dict) and res:
@@ -716,8 +702,7 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
             for key, val in res.items():
                 if not result.get(key) and val:
                     result[key] = val
-            if result["status"] == "unknown":
-                result["status"] = "found"
+            result["status"] = "found"
 
     # Website Scraping (Deep Dive)
     if result.get("website"):
@@ -796,13 +781,12 @@ async def get_registry_data(company_name: str) -> Dict[str, Any]:
         try:
             from duckduckgo_search import DDGS
             ddg = DDGS()
-            # Generalize search query to support global companies, not just India
-            search_query = f"{company_name} company profile information founded headquarters"
+            search_query = f"{company_name} company information India founded"
             search_results = await asyncio.to_thread(lambda: list(ddg.text(search_query, max_results=5)))
             
             if search_results:
                 snippets = " ".join(r.get("body", "") for r in search_results)
-                result["description"] = snippets[:1000]
+                result["description"] = snippets[:800]
                 result["status"] = "found"
                 result["global_operations"] = _build_global_operations(
                     snippets,
@@ -1150,25 +1134,6 @@ async def _fetch_wikipedia_data(company_name: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Wikipedia fetch failed for {company_name}: {e}")
         return None
-
-
-async def _fetch_crunchbase_search(company_name: str) -> Optional[Dict[str, Any]]:
-    """Specifically search for company info on Crunchbase/LinkedIn."""
-    try:
-        from duckduckgo_search import DDGS
-        ddg = DDGS()
-        query = f"{company_name} site:crunchbase.com OR site:linkedin.com/company"
-        results = await asyncio.to_thread(lambda: list(ddg.text(query, max_results=3)))
-        
-        if results:
-            snippets = " ".join([r.get("body", "") for r in results])
-            return {
-                "description": snippets[:1000],
-                "citation_sources": _citation_from_duckduckgo(results)
-            }
-    except Exception as e:
-        logger.debug(f"Crunchbase/LinkedIn search failed: {e}")
-    return None
 
 
 async def _fetch_founders_search(company_name: str) -> List[Dict[str, Any]]:

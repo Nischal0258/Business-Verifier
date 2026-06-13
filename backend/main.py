@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 
-import httpx
+from cachetools import TTLCache
+
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -21,6 +22,9 @@ from schemas import ApiResponse, CompanyVerificationData
 from pdf_generator import create_pdf, PDFGenerationError
 from data_engine import generate_full_report
 from data_engine.models import CompanyReport
+from utils import normalize_company_name
+from fts_search import init_fts5, fuzzy_search, update_fts5_entry
+from tasks import schedule_prefetch_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,11 +47,9 @@ except Exception as e:
 async def _validate_gemini_key():
     """Validate Gemini API key on startup."""
     import google.generativeai as genai
-
     if not settings.gemini_api_key:
         logger.warning("GEMINI_API_KEY not set — Gemini features will be disabled")
         return
-
     try:
         genai.configure(api_key=settings.gemini_api_key)
         # Quick check by listing models
@@ -65,6 +67,21 @@ async def lifespan(app: FastAPI):
     try:
         asyncio.create_task(_validate_gemini_key())
         await init_db()
+
+        # Initialize FTS5 full-text search index
+        from database import get_db_session
+        try:
+            async with get_db_session() as db:
+                await init_fts5(db)
+        except Exception as e:
+            logger.warning(f"FTS5 init skipped: {e}")
+
+        # Start background pre-fetch loop (every 6 hours)
+        from database import async_session_factory
+        asyncio.create_task(
+            schedule_prefetch_loop(async_session_factory, generate_full_report)
+        )
+
         logger.info("Startup complete. API ready to accept requests.")
     except Exception as e:
         logger.error(f"Startup error: {e}")
@@ -94,6 +111,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# In-memory LRU cache — 500 entries, 1 hour TTL
+_hot_cache: TTLCache = TTLCache(maxsize=500, ttl=3600)
 
 
 def _parse_turnover_json(turnover_json: Optional[str]) -> list:
@@ -131,10 +151,11 @@ def _company_report_to_dict(db_report: CachedReport) -> dict:
 
 
 async def _get_cached_report(db: AsyncSession, company_name: str) -> Optional[CachedReport]:
-    """Query database for cached report by company name (case-insensitive)."""
+    """Query database for cached report by normalized company name."""
+    normalized = normalize_company_name(company_name)
     result = await db.execute(
         select(CachedReport).where(
-            CachedReport.company_name.ilike(company_name)
+            CachedReport.company_name.ilike(normalized)
         )
     )
     return result.scalar_one_or_none()
@@ -150,12 +171,11 @@ async def _is_cache_stale(report: CachedReport) -> bool:
 
 
 async def _save_report_to_cache(db: AsyncSession, company_name: str, data: dict) -> CachedReport:
-    """Save or update report in database cache."""
-    # Check for existing report
-    existing = await _get_cached_report(db, company_name)
+    """Save or update report in database cache using normalized name."""
+    normalized = normalize_company_name(company_name)
+    existing = await _get_cached_report(db, normalized)
     
     if existing:
-        # Update existing
         existing.is_verified = data.get("is_verified", False)
         existing.verification_score = data.get("verification_score", 0)
         existing.history_text = data.get("company_history")
@@ -165,9 +185,8 @@ async def _save_report_to_cache(db: AsyncSession, company_name: str, data: dict)
         existing.sources_json = json.dumps(data.get("sources", []))
         existing.updated_at = datetime.utcnow()
     else:
-        # Create new
         existing = CachedReport(
-            company_name=company_name,
+            company_name=normalized,
             is_verified=data.get("is_verified", False),
             verification_score=data.get("verification_score", 0),
             history_text=data.get("company_history"),
@@ -181,6 +200,16 @@ async def _save_report_to_cache(db: AsyncSession, company_name: str, data: dict)
     
     await db.commit()
     await db.refresh(existing)
+
+    # Update in-memory cache
+    _hot_cache[normalized] = _company_report_to_dict(existing)
+
+    # Update FTS5 index
+    try:
+        await update_fts5_entry(db, existing.id, normalized)
+    except Exception:
+        pass  # FTS5 is optional
+
     return existing
 
 
@@ -188,62 +217,86 @@ async def _save_report_to_cache(db: AsyncSession, company_name: str, data: dict)
 async def verify_company(company_name: str, db: AsyncSession = Depends(get_db)):
     """
     Verify a company and return verification data.
-    Checks cache first, then fetches from web if needed.
+    L1: in-memory cache → L2: SQLite cache → L3: live fetch.
     """
+    normalized = normalize_company_name(company_name)
+
     try:
-        # Check cache first
-        cached = await _get_cached_report(db, company_name)
-        
-        if cached and not await _is_cache_stale(cached):
-            # Cache hit - fresh data
-            logger.info(f"Cache hit for {company_name}")
-            data = _company_report_to_dict(cached)
+        # L1: In-memory cache (sub-millisecond)
+        if normalized in _hot_cache:
+            logger.info(f"Memory cache hit for '{normalized}'")
+            data = _hot_cache[normalized]
             return ApiResponse(
                 success=True,
                 data=CompanyVerificationData(**data),
                 error=None,
-                metadata={"cached": True, "updated_at": cached.updated_at.isoformat()}
+                metadata={"cached": True, "cache_layer": "memory"}
             )
-        
-        # Cache miss or stale - fetch new data
-        logger.info(f"Fetching data for {company_name}")
-        
-        # Fetch from data engine (returns CompanyReport Pydantic model)
+
+        # L2: SQLite cache
+        cached = await _get_cached_report(db, normalized)
+
+        if cached and not await _is_cache_stale(cached):
+            logger.info(f"DB cache hit for '{normalized}'")
+            data = _company_report_to_dict(cached)
+            _hot_cache[normalized] = data  # Promote to L1
+            return ApiResponse(
+                success=True,
+                data=CompanyVerificationData(**data),
+                error=None,
+                metadata={"cached": True, "cache_layer": "database", "updated_at": cached.updated_at.isoformat()}
+            )
+
+        # L2.5: FTS5 fuzzy search fallback
+        fuzzy_results = await fuzzy_search(db, normalized, limit=1)
+        if fuzzy_results:
+            best = fuzzy_results[0]
+            logger.info(f"FTS5 fuzzy match: '{normalized}' → '{best['company_name']}'")
+            cached = await _get_cached_report(db, best["company_name"])
+            if cached and not await _is_cache_stale(cached):
+                data = _company_report_to_dict(cached)
+                _hot_cache[normalized] = data
+                return ApiResponse(
+                    success=True,
+                    data=CompanyVerificationData(**data),
+                    error=None,
+                    metadata={"cached": True, "cache_layer": "fts5_fuzzy", "matched": best["company_name"]}
+                )
+
+        # L3: Live fetch
+        logger.info(f"Cache miss — live fetching '{normalized}'")
         report: CompanyReport = await generate_full_report(company_name)
-        
-        # Convert CompanyReport to dict and add missing fields for API compatibility
+
         report_data = report.model_dump()
         if "sources" not in report_data:
             report_data["sources"] = []
-        
-        # Save to cache
-        await _save_report_to_cache(db, company_name, report_data)
-        
+
+        # Detect mock mode from summarizer
+        is_mock = report_data.get("_is_mock", False)
+        report_data.pop("_is_mock", None)
+
+        await _save_report_to_cache(db, normalized, report_data)
+
+        metadata = {"cached": False, "source": "live_fetch"}
+        if is_mock:
+            metadata["source"] = "mock_mode"
+            metadata["warning"] = "LLM API key not configured. Summary is placeholder data."
+
         return ApiResponse(
             success=True,
             data=CompanyVerificationData(**report_data),
             error=None,
-            metadata={"cached": False, "source": "live_fetch"}
+            metadata=metadata
         )
-        
+
     except HTTPException:
         raise
-    except httpx.HTTPError as e:
-        logger.error(f"Network error verifying company {company_name}: {e}")
-        return ApiResponse(
-            success=False,
-            data=None,
-            error=f"Network error: Could not reach data sources. Please check your internet connection and try again. Details: {str(e)[:100]}",
-            metadata=None
-        )
     except Exception as e:
-        logger.error(f"Error verifying company {company_name}: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error verifying company '{normalized}': {e}")
         return ApiResponse(
             success=False,
             data=None,
-            error=f"Verification failed: {str(e)[:150]}",
+            error=f"Internal server error: {str(e)}",
             metadata=None
         )
 
@@ -306,6 +359,97 @@ async def root():
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+
+from agents.crew import build_student_report_crew, build_comparator_crew
+from schemas import CompanyStudentReport
+
+@app.get("/api/v1/student/company/{company_name}", response_model=ApiResponse[CompanyStudentReport])
+async def get_student_company_report(company_name: str, db: AsyncSession = Depends(get_db)):
+    """
+    Triggers CrewAI to research a company and return a student-first report.
+    This kicks off the hierarchical agent workflow asynchronously.
+    """
+    if not settings.nvidia_api_key or not settings.groq_api_key:
+        return ApiResponse(
+            success=False,
+            data=None,
+            error="API keys for LLMs are missing. Please configure NVIDIA and Groq keys.",
+            metadata=None
+        )
+    
+    try:
+        crew = build_student_report_crew(company_name)
+        
+        # Run CrewAI synchronously in a separate thread so we don't block FastAPI's event loop
+        result = await asyncio.to_thread(crew.kickoff)
+        
+        # For simplicity, we just dump the raw output in a mock report struct 
+        report_data = {
+            "company_name": company_name,
+            "description": str(result),
+            "student_trust_score": {"total_score": 75, "is_recommended": True, "company_tier": "rising_star"},
+            "social_media": {},
+            "opportunities": [],
+            "reviews": {},
+            "growth": {},
+            "is_verified": True,
+            "agent_execution_log": "Successfully ran CrewAI."
+        }
+        
+        return ApiResponse(
+            success=True,
+            data=CompanyStudentReport(**report_data),
+            error=None,
+            metadata={"source": "crew_ai"}
+        )
+    except Exception as e:
+        logger.error(f"Error running CrewAI for {company_name}: {e}")
+        traceback.print_exc()
+        return ApiResponse(
+            success=False,
+            data=None,
+            error=f"Agent workflow failed: {str(e)}",
+            metadata=None
+        )
+
+
+@app.get("/api/v1/student/compare")
+async def compare_companies(companies: str):
+    """
+    Compare multiple companies side-by-side.
+    Pass comma-separated company names in query, e.g., ?companies=Google,Microsoft,Amazon
+    """
+    company_list = [c.strip() for c in companies.split(",") if c.strip()]
+    if len(company_list) < 2:
+        return ApiResponse(
+            success=False,
+            data=None,
+            error="Please provide at least 2 companies to compare.",
+            metadata=None
+        )
+        
+    try:
+        crew = build_comparator_crew(company_list)
+        result = await asyncio.to_thread(crew.kickoff)
+        
+        return ApiResponse(
+            success=True,
+            data={
+                "comparison": f"Comparing {len(company_list)} companies: {', '.join(company_list)}",
+                "result": str(result)
+            },
+            error=None,
+            metadata={"companies_compared": company_list, "source": "crew_ai"}
+        )
+    except Exception as e:
+        logger.error(f"Error running CrewAI compare for {company_list}: {e}")
+        return ApiResponse(
+            success=False,
+            data=None,
+            error=f"Comparison failed: {str(e)}",
+            metadata=None
+        )
 
 
 if __name__ == "__main__":

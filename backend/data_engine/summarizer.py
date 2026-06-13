@@ -1,9 +1,8 @@
-"""LLM-based company history summarization with real data fallback."""
+"""LLM-based company history summarization using Gemini Flash with fallback."""
 
 import logging
 import os
-import asyncio
-from typing import Optional
+from typing import Optional, Tuple
 
 from dotenv import load_dotenv
 import google.generativeai as genai
@@ -12,66 +11,71 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-_GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY")
+_GEMINI_API_KEY: Optional[str] = os.getenv("Gemini_API_KEY") or os.getenv("GEMINI_API_KEY")
+_MODEL: Optional[genai.GenerativeModel] = None
+
 if _GEMINI_API_KEY:
     genai.configure(api_key=_GEMINI_API_KEY)
+    _MODEL = genai.GenerativeModel("gemini-2.0-flash")
+    logger.info("Gemini Flash model initialized for summarization.")
 else:
-    logger.warning("GEMINI_API_KEY is not set. Will use direct company descriptions.")
+    logger.warning("GEMINI_API_KEY not set. Operating in Mock Mode for summarization.")
+
+_MOCK_HISTORY = (
+    "This company has established itself as a notable player in its industry "
+    "over the past decade. Founded with a clear strategic vision, it has "
+    "consistently expanded its market presence and diversified its revenue "
+    "streams. The leadership team has navigated various economic cycles, "
+    "demonstrating resilience and adaptability in the face of challenges.\n\n"
+    "In recent years, the firm has invested heavily in technology and "
+    "operational efficiency, resulting in improved margins and stronger "
+    "customer retention. Partnerships with key stakeholders have further "
+    "solidified its competitive position and opened new avenues for growth "
+    "both domestically and internationally.\n\n"
+    "Looking ahead, the company is poised to capitalise on emerging trends "
+    "and evolving consumer preferences. Its commitment to innovation and "
+    "sustainable practices positions it well for long-term success in an "
+    "increasingly dynamic marketplace."
+)
+
+_SYSTEM_PROMPT = (
+    "You are a professional business analyst. Write a concise, "
+    "3-paragraph company history based on the raw information provided. "
+    "Each paragraph should cover a distinct era: founding / early years, "
+    "growth / expansion, and recent / current status. Use a formal tone."
+)
 
 
-async def summarize_history(raw_data: str, company_description: Optional[str] = None) -> str:
-    """Generate a professional company history.
+async def summarize_history(raw_data: str) -> Tuple[str, bool]:
+    """Generate a professional 3-paragraph company history via Gemini Flash.
 
-    Strategy:
-    1. If Gemini is available, use it to write a polished summary
-    2. If Gemini fails/unavailable, use the real company description from Yahoo Finance
-    3. If no description available, return a data-based summary from the raw context
+    Returns a tuple of (summary_text, is_mock) so callers can indicate
+    mock mode in API responses.
 
     Parameters
     ----------
     raw_data:
-        Raw context about the company (registry + financials).
-    company_description:
-        Real business description from Yahoo Finance (if available).
+        Raw scraped / textual context about the company.
 
     Returns
     -------
-    str
-        A professional company history.
+    Tuple[str, bool]
+        (summary_text, is_mock) — is_mock=True when using fallback.
     """
-    # Try Gemini first
-    if _GEMINI_API_KEY:
-        try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            prompt = (
-                f"You are a professional business analyst. Based on the following raw context "
-                f"about {company_description if company_description else 'a company'}, "
-                f"write a polished, concise, and neutral 3-4 sentence company history.\n\n"
-                f"Context:\n{raw_data}\n\n"
-                f"Summary:"
-            )
-            
-            # Use a thread pool to call the synchronous Gemini API in an async context
-            response = await asyncio.to_thread(model.generate_content, prompt)
-            
-            if response.text:
-                logger.info("Gemini summarization successful")
-                return response.text.strip()
-                
-        except Exception as exc:
-            logger.warning(
-                "Gemini API call failed (%s). Falling back to direct description.", exc
-            )
+    if not _GEMINI_API_KEY or _MODEL is None:
+        logger.warning("Gemini API key not configured. Returning mock history.")
+        return _MOCK_HISTORY, True
 
-    # Fallback: Use the real company description from Yahoo Finance
-    if company_description and len(company_description) > 100:
-        logger.info("Using Yahoo Finance company description as fallback")
-        return company_description
-
-    # Final fallback: Use the raw data itself
-    logger.info("Using raw data context as final fallback")
-    return (
-        f"Based on available data:\n\n{raw_data}\n\n"
-        "Note: Detailed company history could not be generated. "
-        "The information above is sourced from public financial records."
-    )
+    try:
+        prompt = f"{_SYSTEM_PROMPT}\n\nCompany information:\n{raw_data}"
+        response = await _MODEL.generate_content_async(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.7,
+                max_output_tokens=600,
+            ),
+        )
+        return response.text.strip(), False
+    except Exception as exc:
+        logger.warning("Gemini API call failed (%s). Falling back to mock history.", exc)
+        return _MOCK_HISTORY, True

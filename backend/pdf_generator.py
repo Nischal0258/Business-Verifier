@@ -38,17 +38,18 @@ def create_pdf(company_data: Dict) -> bytes:
 
     try:
         # Load template
-        template = env.get_template("report.html")
+        template = env.get_template("student_report.html")
         
         # Prepare template data
         template_data = {
             "company_name": company_data.get("company_name", "Unknown Company"),
             "is_verified": company_data.get("is_verified", False),
-            "company_history": _format_history(company_data.get("company_history", "")),
-            "jurisdiction": company_data.get("jurisdiction"),
-            "incorporation_date": company_data.get("incorporation_date"),
-            "turnover_data": company_data.get("turnover_data", []),
-            "sources": company_data.get("sources", []),
+            "description": company_data.get("description", ""),
+            "industry": company_data.get("industry", ""),
+            "student_trust_score": company_data.get("student_trust_score", {}),
+            "opportunities": company_data.get("opportunities", []),
+            "social_media": company_data.get("social_media", {}),
+            "reviews": company_data.get("reviews", {}),
             "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
         }
         

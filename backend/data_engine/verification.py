@@ -96,24 +96,13 @@ def verify_company(
     if registry_data.get("employees") and registry_data["employees"] > 0:
         score += 5
 
-    # 8. Founder Profiles (Startup Signal - max 10)
-    founders = registry_data.get("founder_profiles", [])
-    if len(founders) >= 2:
-        score += 10
-    elif len(founders) >= 1:
-        score += 5
-
-    # 9. Citation Sources (Credibility Signal - max 10)
-    citations = registry_data.get("citation_sources", [])
-    if len(citations) >= 3:
-        score += 10
-    elif len(citations) >= 1:
-        score += 5
-
     # Determine verification
+    has_positive_revenue = any(
+        record.get("revenue", 0) > 0 for record in financial_data
+    )
     is_verified = (
         status in {"active", "found"}
-        and score >= 35  # Reduced threshold slightly for high-quality startup data
+        and score >= 40
     )
 
     logger.info(
