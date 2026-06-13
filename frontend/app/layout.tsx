@@ -3,8 +3,8 @@ import "./globals.css";
 import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "VerifyIQ — Business Verification & Analytics",
-  description: "Verify any business in seconds. Used by investors, banks, and procurement teams.",
+  title: "InternIQ — Discover Internships Beyond MNCs",
+  description: "AI-powered internship discovery platform. Search any company — from Google to your local startup. Get trust scores, reviews, and opportunities in one place.",
 };
 
 export default function RootLayout({

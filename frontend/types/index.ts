@@ -42,3 +42,6 @@ export interface CompanyData {
   employee_count?: number | null;
   market_cap?: number | null;
 }
+
+export type { CompanyStudentReport, StudentTrustScore, SocialMediaLinks, OpportunityItem, CompanyReviewSummary, GrowthIndicator, ExploreFilters } from './student';
+

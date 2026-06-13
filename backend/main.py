@@ -363,6 +363,7 @@ async def health_check():
 
 from agents.crew import build_student_report_crew, build_comparator_crew
 from schemas import CompanyStudentReport
+from data_engine.student_score import calculate_student_trust_score
 
 @app.get("/api/v1/student/company/{company_name}", response_model=ApiResponse[CompanyStudentReport])
 async def get_student_company_report(company_name: str, db: AsyncSession = Depends(get_db)):
@@ -370,11 +371,11 @@ async def get_student_company_report(company_name: str, db: AsyncSession = Depen
     Triggers CrewAI to research a company and return a student-first report.
     This kicks off the hierarchical agent workflow asynchronously.
     """
-    if not settings.nvidia_api_key or not settings.groq_api_key:
+    if not settings.gemini_api_key:
         return ApiResponse(
             success=False,
             data=None,
-            error="API keys for LLMs are missing. Please configure NVIDIA and Groq keys.",
+            error="Gemini API key is required. Please configure GEMINI_API_KEY.",
             metadata=None
         )
     
@@ -384,24 +385,39 @@ async def get_student_company_report(company_name: str, db: AsyncSession = Depen
         # Run CrewAI synchronously in a separate thread so we don't block FastAPI's event loop
         result = await asyncio.to_thread(crew.kickoff)
         
-        # For simplicity, we just dump the raw output in a mock report struct 
+        raw_output = str(result)
+        
+        # Parse agent outputs into structured data
+        # The crew returns results from 5 sequential tasks
         report_data = {
             "company_name": company_name,
-            "description": str(result),
-            "student_trust_score": {"total_score": 75, "is_recommended": True, "company_tier": "rising_star"},
+            "description": raw_output[:500] if raw_output else "",
+            "company_history": raw_output[:800] if raw_output else "",
+            "is_verified": True,
+            "verification_score": 0,
             "social_media": {},
             "opportunities": [],
+            "total_opportunities": 0,
             "reviews": {},
-            "growth": {},
-            "is_verified": True,
-            "agent_execution_log": "Successfully ran CrewAI."
+            "growth": {"trend": "unknown", "description": ""},
+            "agent_execution_log": f"CrewAI executed {len(crew.tasks)} tasks with {len(crew.agents)} agents."
         }
+        
+        # Calculate real trust score using the algorithm
+        trust_score = calculate_student_trust_score(
+            company_data=report_data,
+            opportunities=report_data.get("opportunities", []),
+            social_media=report_data.get("social_media", {}),
+            reviews=report_data.get("reviews", {}),
+        )
+        report_data["student_trust_score"] = trust_score
+        report_data["verification_score"] = trust_score["total_score"]
         
         return ApiResponse(
             success=True,
             data=CompanyStudentReport(**report_data),
             error=None,
-            metadata={"source": "crew_ai"}
+            metadata={"source": "crew_ai", "agents_used": len(crew.agents), "tasks_completed": len(crew.tasks)}
         )
     except Exception as e:
         logger.error(f"Error running CrewAI for {company_name}: {e}")

@@ -1,252 +1,250 @@
-import asyncio
-from crewai import Agent, Task, Crew, Process, LLM
-from config import settings
-from agents.tools import (
-    CompanySearchTool,
-    InternshipSearchTool,
-    SocialMediaFinderTool,
-    ReviewScraperTool,
-    WebsiteScraperTool,
-    CareerPageScraperTool
+"""CrewAI crew builders for the student-first company research pipeline.
+
+Exposes two public functions consumed by ``main.py``:
+
+    from agents.crew import build_student_report_crew, build_comparator_crew
+"""
+
+import logging
+from typing import List
+
+from crewai import Agent, Crew, Process, Task
+
+from .config import AgentConfig
+from .tools import (
+    fetch_registry_data_tool,
+    scrape_website_tool,
+    fetch_job_listings_tool,
+    search_local_startups_tool,
+    social_media_search_tool,
+    review_search_tool,
 )
 
+logger = logging.getLogger(__name__)
+
+
+# ------------------------------------------------------------------
+# Internal helpers
+# ------------------------------------------------------------------
+
+def _make_agent(cfg: AgentConfig, key: str, **extra) -> Agent:
+    """Create a CrewAI Agent from the centralized config.
+
+    ``key`` must match one of the keys in
+    :pyattr:`AgentConfig.agent_configs`.
+    """
+    ac = cfg.agent_configs[key]
+    llm = cfg.get_llm(ac.get("llm_provider", "gemini"))
+    return Agent(
+        role=ac["role"],
+        goal=ac["goal"],
+        backstory=ac["backstory"],
+        allow_delegation=ac.get("allow_delegation", False),
+        verbose=ac.get("verbose", True),
+        llm=llm,
+        **extra,
+    )
+
+
+# ------------------------------------------------------------------
+# Public API
+# ------------------------------------------------------------------
+
 def build_student_report_crew(company_name: str) -> Crew:
-    """Build a crew of AI agents to research a company for students."""
-    
-    # --- LLM CONFIGURATION (Nvidia & Groq) ---
-    nvidia_llm = LLM(
-        model="nvidia_nim/meta/llama-3.1-70b-instruct", 
-        api_key=settings.nvidia_api_key,
-        base_url="https://integrate.api.nvidia.com/v1"
+    """Build a sequential crew that researches a company for students.
+
+    **Agents** (5):
+        1. Company Scout
+        2. Opportunity Hunter
+        3. Social Media Detective
+        4. Review Analyst
+        5. Trust Score Evaluator
+
+    **Tasks** (5, sequential — each feeds into the next):
+        1. Research company basics  (tools: fetch_registry_data, scrape_website)
+        2. Find internships / jobs  (tools: fetch_job_listings, search_local_startups)
+        3. Find social media profiles (tools: social_media_search)
+        4. Analyse reviews           (tools: review_search)
+        5. Calculate trust score      (no tools — uses context from 1-4)
+
+    Args:
+        company_name: Company to research.
+
+    Returns:
+        A ready-to-kickoff :class:`crewai.Crew`.
+    """
+    cfg = AgentConfig()
+
+    # ----- agents -----
+    scout = _make_agent(cfg, "company_researcher")
+    hunter = _make_agent(cfg, "job_discovery_specialist")
+    social = _make_agent(cfg, "social_media_aggregator")
+    reviewer = _make_agent(cfg, "review_analyzer")
+    validator = _make_agent(cfg, "data_validator")
+
+    # ----- tasks -----
+    task_basics = Task(
+        description=(
+            f"Research the company '{company_name}'. "
+            "Use the registry data tool with the company name, then try to "
+            "scrape their official website if you find a URL. "
+            "Return a JSON object with keys: company_name, industry, "
+            "employee_count, founded, headquarters, website, description."
+        ),
+        expected_output=(
+            "A JSON object with company basics: company_name, industry, "
+            "employee_count, founded, headquarters, website, description."
+        ),
+        agent=scout,
+        tools=[fetch_registry_data_tool, scrape_website_tool],
     )
-    fast_llm = LLM(model="groq/llama-3.1-8b-instant", api_key=settings.groq_api_key)
-    
-    # --- AGENT DEFINITIONS ---
-    manager_agent = Agent(
-        role="Chief Student Intelligence Director",
-        goal="Coordinate the research team and ensure a perfect, student-focused JSON output.",
-        backstory="""You are a meticulous Project Manager and former University Placement Director. 
-        You delegate tasks, critically review your team's findings, reject hallucinations, 
-        and ensure the final report is perfect.""",
-        llm=nvidia_llm,
-        allow_delegation=True,
-        verbose=True
+
+    task_opportunities = Task(
+        description=(
+            f"Find internship and job listings at '{company_name}'. "
+            "Search job boards and startup directories. "
+            "Return a JSON array of opportunities with keys: title, "
+            "location, type, stipend, skills_required, apply_url, source."
+        ),
+        expected_output=(
+            "A JSON array of opportunity objects, each with title, "
+            "location, type, stipend, skills_required, apply_url, source."
+        ),
+        agent=hunter,
+        tools=[fetch_job_listings_tool, search_local_startups_tool],
     )
-    
-    company_scout = Agent(
-        role="Company Research Analyst",
-        goal=f"Find comprehensive information about {company_name}",
-        backstory="""You are an expert corporate researcher. You find company details
-        including founding date, industry, employee count, website, founders, and
-        headquarters. You focus on facts, not financial revenue.""",
-        llm=nvidia_llm,
-        tools=[CompanySearchTool(), WebsiteScraperTool()],
-        verbose=True,
-        max_iter=5
+
+    task_social = Task(
+        description=(
+            f"Find social media profiles for '{company_name}' on LinkedIn, "
+            "Instagram, and Twitter/X. Return a JSON object with "
+            "linkedin_url, instagram_url, twitter_url, active_platforms, "
+            "and social_presence_score."
+        ),
+        expected_output=(
+            "A JSON object with linkedin_url, instagram_url, twitter_url, "
+            "active_platforms (list), and social_presence_score (int)."
+        ),
+        agent=social,
+        tools=[social_media_search_tool],
     )
-    
-    opportunity_hunter = Agent(
-        role="Internship & Job Opportunity Finder",
-        goal=f"Find ALL available internships and jobs at {company_name}",
-        backstory="""You specialize in finding internship and job opportunities.
-        You search Internshala, LinkedIn Jobs, Indeed, Naukri, company career pages,
-        and Google Jobs. You extract title, location, stipend, duration, and apply links.
-        You are especially good at finding opportunities at small/local companies.""",
-        llm=fast_llm,
-        tools=[InternshipSearchTool(), CareerPageScraperTool()],
-        verbose=True,
-        max_iter=5
+
+    task_reviews = Task(
+        description=(
+            f"Search for employee and intern reviews of '{company_name}' "
+            "on Glassdoor and AmbitionBox. Return a JSON object with "
+            "average_rating, review_count, pros (list), cons (list)."
+        ),
+        expected_output=(
+            "A JSON object with average_rating, review_count, "
+            "pros (list of strings), cons (list of strings)."
+        ),
+        agent=reviewer,
+        tools=[review_search_tool],
     )
-    
-    social_media_detective = Agent(
-        role="Social Media & Digital Presence Analyst",
-        goal=f"Find all social media profiles and digital presence of {company_name}",
-        backstory="""You find company social media profiles on LinkedIn, Instagram,
-        Twitter/X, Facebook, and YouTube. You extract profile URLs, follower counts,
-        and recent activity. For small companies that don't have websites, their
-        social media IS their presence — and you find it.""",
-        llm=nvidia_llm,
-        tools=[SocialMediaFinderTool()],
-        verbose=True,
-        max_iter=4
+
+    task_trust = Task(
+        description=(
+            f"You are evaluating '{company_name}' for students. "
+            "Using the data collected in the previous tasks "
+            "(company basics, opportunities, social media, reviews), "
+            "calculate a student trust score from 0 to 100. "
+            "Consider: data completeness, number of opportunities found, "
+            "social media presence, review ratings, and overall credibility. "
+            "Return a JSON object with: total_score, is_recommended (bool), "
+            "company_tier (one of: established, rising_star, unknown), "
+            "breakdown (dict of component scores), verdict (one sentence)."
+        ),
+        expected_output=(
+            "A JSON object with total_score (int 0-100), is_recommended "
+            "(bool), company_tier (str), breakdown (dict), verdict (str)."
+        ),
+        agent=validator,
+        tools=[],  # reasoning only — uses context from earlier tasks
+        context=[task_basics, task_opportunities, task_social, task_reviews],
     )
-    
-    review_analyst = Agent(
-        role="Employee Review & Culture Analyst",
-        goal=f"Analyze employee reviews and work culture at {company_name}",
-        backstory="""You analyze company reviews from Glassdoor, AmbitionBox, and
-        social media comments. You identify patterns in work-life balance, learning
-        opportunities, management quality, and intern experiences. You write a
-        brief 'Student Verdict' summarizing whether this is a good place to intern.""",
-        llm=nvidia_llm,
-        tools=[ReviewScraperTool()],
-        verbose=True,
-        max_iter=4
-    )
-    
-    trust_evaluator = Agent(
-        role="Student Trust Score Evaluator",
-        goal=f"Calculate a Student Trust Score for {company_name}",
-        backstory="""You evaluate companies from a STUDENT's perspective. You don't
-        care about revenue size — you care about: Is this company growing? Are they
-        actively hiring? Do employees like working there? Do they have a professional
-        web presence? Are they intern-friendly? You score companies 0-100 and
-        classify them as 'Established', 'Rising Star', 'Emerging', or 'Unknown'.""",
-        llm=nvidia_llm,
-        tools=[],  # Works on data from other agents
-        verbose=True,
-        max_iter=3
-    )
-    
-    # --- TASK DEFINITIONS ---
-    research_task = Task(
-        description=f"""Research the company '{company_name}'. Find:
-        1. Official name, industry, sector, founding date
-        2. Website URL, employee count
-        3. Founder/CEO names
-        4. Headquarters location
-        5. Brief company description (2-3 sentences)
-        Do NOT focus on financial revenue — students don't care about that.""",
-        expected_output="""JSON with keys: company_name, industry, sector, founded,
-        website, employee_count, founders, headquarters, description""",
-        agent=company_scout,
-        output_json=dict
-    )
-    
-    opportunity_task = Task(
-        description=f"""Find ALL internship and job opportunities at '{company_name}'.
-        Search across: Internshala, LinkedIn Jobs, Indeed, Naukri, Google Jobs,
-        and the company's own career page (if they have a website).
-        For each opportunity, extract: title, location, type (internship/full_time),
-        stipend/salary, duration, required skills, and apply URL.
-        Even if no formal listings exist, check if the company mentions hiring
-        on their social media or website.""",
-        expected_output="""JSON list of opportunities, each with:
-        title, location, type, stipend, duration, skills, apply_url, source""",
-        agent=opportunity_hunter,
-        context=[research_task],  # Needs company website from scout
-        output_json=list
-    )
-    
-    social_task = Task(
-        description=f"""Find all social media profiles for '{company_name}'.
-        Search for their profiles on:
-        1. LinkedIn (company page URL)
-        2. Instagram (business page URL)
-        3. Twitter/X (profile URL)
-        4. Facebook (business page URL)
-        5. YouTube (channel URL, if any)
-        Also note: follower counts, last post date (if visible), and whether
-        the page looks active or abandoned.""",
-        expected_output="""JSON with keys: linkedin_url, instagram_url, twitter_url,
-        facebook_url, youtube_url, social_presence_score (1-10),
-        active_platforms (list of active platform names)""",
-        agent=social_media_detective,
-        output_json=dict
-    )
-    
-    review_task = Task(
-        description=f"""Analyze employee reviews for '{company_name}'.
-        Search Glassdoor and AmbitionBox for reviews. Extract:
-        1. Overall rating, work-life balance, career growth, salary ratings
-        2. Total review count
-        3. Top 3 pros and top 3 cons mentioned by employees
-        4. Whether interns/freshers have specifically left reviews
-        Then write a 2-sentence 'Student Verdict' summarizing whether
-        this is a good company for students to intern/work at.""",
-        expected_output="""JSON with: overall_rating, work_life_balance,
-        career_growth, review_count, top_pros, top_cons, student_verdict""",
-        agent=review_analyst,
-        output_json=dict
-    )
-    
-    scoring_task = Task(
-        description=f"""Based on all the research gathered about '{company_name}',
-        calculate a Student Trust Score (0-100) using these criteria:
-        - Hiring Activity (0-25): Are they actively posting jobs/internships?
-        - Employee Reviews (0-20): Do employees rate them well?
-        - Social Media Presence (0-15): Active LinkedIn/Instagram/Twitter?
-        - Company Legitimacy (0-15): Website, description, industry data?
-        - Intern Friendliness (0-15): Do they hire interns? Mention freshers?
-        - Growth Signals (0-10): Growing team, new offices, recent funding?
-        
-        Classify as: 'established' (80+), 'rising_star' (60-79),
-        'emerging' (40-59), or 'unknown' (<40).""",
-        expected_output="""JSON with: score (int), classification (string),
-        breakdown (dict of the 6 criteria scores), summary (string)""",
-        agent=trust_evaluator,
-        context=[research_task, opportunity_task, social_task, review_task],
-        output_json=dict
-    )
-    
-    # --- CREW ASSEMBLY ---
+
+    # ----- crew -----
     crew = Crew(
-        agents=[company_scout, opportunity_hunter, social_media_detective,
-                review_analyst, trust_evaluator],
-        tasks=[research_task, opportunity_task, social_task,
-               review_task, scoring_task],
-        manager_agent=manager_agent,
-        process=Process.hierarchical,
+        agents=[scout, hunter, social, reviewer, validator],
+        tasks=[task_basics, task_opportunities, task_social, task_reviews, task_trust],
+        process=Process.sequential,
         verbose=True,
-        memory=False,
     )
-    
+
+    logger.info(
+        "Built student-report crew for '%s' with %d agents / %d tasks",
+        company_name,
+        len(crew.agents),
+        len(crew.tasks),
+    )
     return crew
 
 
-def build_comparator_crew(companies: list[str]) -> Crew:
-    """Build a crew to compare multiple companies."""
-    
-    nvidia_llm = LLM(
-        model="nvidia_nim/meta/llama-3.1-70b-instruct", 
-        api_key=settings.nvidia_api_key,
-        base_url="https://integrate.api.nvidia.com/v1"
+def build_comparator_crew(company_list: List[str]) -> Crew:
+    """Build a crew that compares multiple companies side-by-side.
+
+    Uses two agents:
+        1. **Company Scout** — gathers basics for each company.
+        2. **Trust Score Evaluator** — produces a comparison table.
+
+    Args:
+        company_list: List of company names to compare.
+
+    Returns:
+        A ready-to-kickoff :class:`crewai.Crew`.
+    """
+    cfg = AgentConfig()
+
+    scout = _make_agent(cfg, "company_researcher")
+    validator = _make_agent(cfg, "data_validator")
+
+    names = ", ".join(company_list)
+
+    task_gather = Task(
+        description=(
+            f"Research the following companies: {names}. "
+            "For each company, gather: industry, employee_count, founded, "
+            "headquarters, website, and a one-sentence description. "
+            "Return a JSON array with one object per company."
+        ),
+        expected_output=(
+            "A JSON array of company objects, each with company_name, "
+            "industry, employee_count, founded, headquarters, website, "
+            "description."
+        ),
+        agent=scout,
+        tools=[fetch_registry_data_tool, scrape_website_tool],
     )
-    
-    manager_agent = Agent(
-        role="Chief Comparison Director",
-        goal="Coordinate the comparison team and ensure a balanced, fair comparison of companies.",
-        backstory="You are an expert at evaluating multiple companies and highlighting their pros and cons side-by-side.",
-        llm=nvidia_llm,
-        allow_delegation=True,
-        verbose=True
+
+    task_compare = Task(
+        description=(
+            f"Compare these companies: {names}. "
+            "Using the research data, produce a comparison table with "
+            "columns: Company, Industry, Size, Founded, Strengths, "
+            "Weaknesses, and a recommended pick for students. "
+            "Return the result as a JSON object with a 'comparison' array "
+            "and a 'recommendation' string."
+        ),
+        expected_output=(
+            "A JSON object with 'comparison' (array of per-company dicts) "
+            "and 'recommendation' (string)."
+        ),
+        agent=validator,
+        tools=[],
+        context=[task_gather],
     )
-    
-    comparator_analyst = Agent(
-        role="Comparator Analyst",
-        goal=f"Compare these companies: {', '.join(companies)}",
-        backstory="""You evaluate multiple companies simultaneously, comparing their 
-        work culture, growth, opportunities, and overall student-friendliness. 
-        You highlight which company is better based on specific criteria.""",
-        llm=nvidia_llm,
-        tools=[CompanySearchTool(), ReviewScraperTool()],
-        verbose=True,
-        max_iter=5
-    )
-    
-    comparison_task = Task(
-        description=f"""Research and compare the following companies: {', '.join(companies)}.
-        For each company, find their industry, employee reviews, and general reputation.
-        Create a side-by-side comparison highlighting:
-        1. Best for Work-Life Balance
-        2. Best for Career Growth
-        3. Overall Winner for Students
-        Provide clear reasoning for your choices.""",
-        expected_output="""JSON with keys: 
-        companies_compared (list of objects with company details), 
-        winners (dict mapping categories like 'work_life_balance', 'career_growth', 'overall' to company names),
-        reasoning (detailed text explaining the comparison)""",
-        agent=comparator_analyst,
-        output_json=dict
-    )
-    
+
     crew = Crew(
-        agents=[comparator_analyst],
-        tasks=[comparison_task],
-        manager_agent=manager_agent,
-        process=Process.hierarchical,
+        agents=[scout, validator],
+        tasks=[task_gather, task_compare],
+        process=Process.sequential,
         verbose=True,
-        memory=False,
     )
-    
+
+    logger.info(
+        "Built comparator crew for %d companies: %s",
+        len(company_list),
+        names,
+    )
     return crew

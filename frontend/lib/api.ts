@@ -381,3 +381,83 @@ export function checkNetworkStatus(): Promise<boolean> {
 export function isOnline(): boolean {
   return navigator.onLine;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   InternIQ v3 — Student API Functions
+   ═══════════════════════════════════════════════════════════════════ */
+
+import type { CompanyStudentReport } from "@/types/student";
+
+interface StudentApiResponse<T> {
+  success: boolean;
+  data: T | null;
+  error: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+/**
+ * Fetch a student-oriented company report via CrewAI agents.
+ * Hits: GET /api/v1/student/company/{company_name}
+ */
+export async function fetchStudentCompanyReport(
+  companyName: string
+): Promise<CompanyStudentReport> {
+  const apiBase = getApiBaseUrl();
+  const encoded = encodeURIComponent(companyName.trim());
+
+  try {
+    const response = await apiClient.get<StudentApiResponse<CompanyStudentReport>>(
+      `${apiBase}/api/v1/student/company/${encoded}`
+    );
+
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || "Failed to fetch student report");
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: errorCode === ErrorCode.NETWORK_ERROR || errorCode === ErrorCode.TIMEOUT_ERROR,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Compare multiple companies via CrewAI.
+ * Hits: GET /api/v1/student/compare?companies=A,B,C
+ */
+export async function compareCompanies(
+  companies: string[]
+): Promise<{ comparison: string; result: string }> {
+  const apiBase = getApiBaseUrl();
+  const joined = companies.map((c) => c.trim()).join(",");
+
+  try {
+    const response = await apiClient.get<StudentApiResponse<{ comparison: string; result: string }>>(
+      `${apiBase}/api/v1/student/compare`,
+      { params: { companies: joined } }
+    );
+
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || "Comparison failed");
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: false,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
