@@ -5,9 +5,10 @@ import sys
 import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 
 import httpx
+from pydantic import BaseModel
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -308,7 +309,84 @@ async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
 
+
+class CompareRequest(BaseModel):
+    companies: List[str]
+
+@app.post("/api/v1/student/compare")
+async def compare_companies(request: CompareRequest):
+    try:
+        from agents.crew import build_comparator_crew
+        crew = build_comparator_crew(request.companies)
+        result = await asyncio.to_thread(crew.kickoff)
+        try:
+            comparison_data = json.loads(result.raw)
+        except:
+            comparison_data = {"raw_output": result.raw}
+        return {"success": True, "comparison": comparison_data}
+    except Exception as e:
+        logger.error(f"Error comparing companies: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/company/{company_name}/report")
+async def get_company_report(company_name: str):
+    try:
+        from agents.crew import build_student_report_crew
+        crew = build_student_report_crew(company_name)
+        result = await asyncio.to_thread(crew.kickoff)
+        try:
+            report_data = json.loads(result.raw)
+        except:
+            report_data = {"raw_output": result.raw}
+        return {"success": True, "report": report_data}
+    except Exception as e:
+        logger.error(f"Error generating report for {company_name}: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/company/{company_name}/opportunities")
+async def get_company_opportunities(company_name: str):
+    return {"success": True, "opportunities": []}
+
+@app.get("/api/company/{company_name}/social")
+async def get_company_social(company_name: str):
+    return {"success": True, "social": {}}
+
+@app.get("/api/company/{company_name}/reviews")
+async def get_company_reviews(company_name: str):
+    return {"success": True, "reviews": {}}
+
+@app.get("/api/explore")
+async def explore_opportunities(q: str = "", location: str = "", type: str = "all", industry: str = "", min_stipend: int = 0, company_tier: str = "all", sort: str = "relevance", page: int = 1, limit: int = 20):
+    return {"success": True, "opportunities": [], "total": 0}
+
+@app.get("/api/company/{company_name}/report/pdf")
+async def get_company_report_pdf(company_name: str):
+    try:
+        from agents.crew import build_student_report_crew
+        from pdf_generator import create_student_pdf
+        crew = build_student_report_crew(company_name)
+        result = await asyncio.to_thread(crew.kickoff)
+        try:
+            report_data = json.loads(result.raw)
+        except:
+            report_data = {"raw_output": result.raw}
+        
+        pdf_bytes = create_student_pdf(report_data)
+        return StreamingResponse(
+            iter([pdf_bytes]),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{company_name.replace(" ", "_")}_student_report.pdf"'
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error generating student PDF for {company_name}: {e}")
+        return {"success": False, "error": str(e)}
+
+
+
 if __name__ == "__main__":
+
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 import asyncio

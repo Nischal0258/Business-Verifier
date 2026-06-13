@@ -1,55 +1,289 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+"use client";
+
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { ExternalLink, Star, MapPin, Building, ShieldCheck, AlertTriangle, TrendingUp, Users } from "lucide-react";
+import { CompanyStudentReport } from "@/types";
 
-export default async function CompanyPage({ params }: { params: { name: string } }) {
-  const companyName = params.name;
+export default function CompanyPage({ params }: { params: { name: string } }) {
+  const companyName = decodeURIComponent(params.name);
+  const [report, setReport] = useState<CompanyStudentReport | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // In a real app, fetch from /api/company/{name}/report
+    // For now, mock data
+    setTimeout(() => {
+      setReport({
+        company_name: companyName,
+        trust_score: {
+          total_score: 72,
+          company_tier: "Rising Star",
+          is_recommended: true,
+          breakdown: {
+            hiring: 18,
+            reviews: 14,
+            social: 12,
+            legitimacy: 15,
+            intern_friendly: 8,
+            growth: 5
+          },
+          verdict: "A solid rising star startup with active hiring and decent reviews."
+        },
+        growth: {
+          trend: "Growing",
+          growth_pct: 42,
+          description: "Revenue grew 42% year-over-year"
+        },
+        social_media: {
+          linkedin_url: "https://linkedin.com/company/mock",
+          twitter_url: "https://twitter.com/mock",
+          active_platforms: ["LinkedIn", "Twitter", "Instagram"]
+        },
+        reviews: {
+          overall_rating: 4.1,
+          review_count: 38,
+          top_pros: ["Great learning environment", "Supportive mentors"],
+          top_cons: ["Below-market stipend", "Fast-paced can be stressful"],
+          student_verdict: "Excellent for interns who want hands-on experience."
+        },
+        opportunities: [
+          {
+            title: "Software Engineering Intern",
+            company_name: companyName,
+            location: "Bangalore",
+            type: "internship",
+            stipend: "₹15,000/mo",
+            duration: "3 months",
+            skills_required: ["Python", "React"],
+            apply_url: "#",
+            source: "Internshala"
+          }
+        ],
+        basic_info: {
+          industry: "IT Services",
+          founded: "2019",
+          employees: 45
+        }
+      });
+      setLoading(false);
+    }, 1500);
+  }, [companyName]);
+
+  if (loading) {
+    return (
+      <div className="container mx-auto py-12 text-center">
+        <h2 className="text-2xl font-semibold mb-4">Generating Student Intelligence Report...</h2>
+        <p className="text-gray-500 max-w-md mx-auto">
+          Our CrewAI agent team (Manager, Scout, Hunter, Detective, and Evaluator) is currently scouring the web for {companyName}. This usually takes about 20-30 seconds.
+        </p>
+      </div>
+    );
+  }
+
+  if (!report) return null;
 
   return (
-    <div className="container mx-auto py-8">
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-start">
+    <div className="container mx-auto py-8 space-y-8">
+      {/* Company Header */}
+      <Card className="border-t-4 border-t-blue-600 shadow-lg">
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             <div>
-              <CardTitle className="text-3xl font-bold">{companyName}</CardTitle>
-              <p className="text-muted-foreground">Information for Students & Interns</p>
-            </div>
-            <Badge variant="secondary" className="text-lg py-1 px-3">
-              Trust Score: Pending
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-xl font-semibold mb-3">Company Overview</h3>
-                <p className="text-gray-700">
-                  Data is being gathered by our CrewAI agent team. Please check back soon or trigger a fresh report.
-                </p>
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold mb-3">Open Opportunities</h3>
-                <p className="text-gray-700">Loading internships and job postings...</p>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">{report.company_name}</h1>
+              <div className="flex flex-wrap gap-4 text-gray-600">
+                <span className="flex items-center"><Building className="w-4 h-4 mr-1" /> {report.basic_info.industry}</span>
+                <span className="flex items-center"><MapPin className="w-4 h-4 mr-1" /> Bangalore</span>
+                <span className="flex items-center"><Users className="w-4 h-4 mr-1" /> {report.basic_info.employees} employees</span>
               </div>
             </div>
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-xl font-semibold mb-3">Student Verdict</h3>
-                <div className="bg-amber-50 p-4 rounded-md border border-amber-200">
-                  <p className="text-amber-800">
-                    Analysis in progress. Our Student Trust Evaluator is reviewing hiring activity, employee reviews, and social presence.
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <Button variant="outline" disabled>View LinkedIn</Button>
-                <Button variant="outline" disabled>Read Reviews</Button>
+            <div className="flex flex-col items-end bg-slate-50 p-4 rounded-xl border">
+              <div className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Student Trust Score</div>
+              <div className="flex items-center gap-3">
+                <span className="text-4xl font-black text-blue-700">{report.trust_score.total_score}</span>
+                <Badge variant={report.trust_score.company_tier === 'Rising Star' ? 'default' : 'secondary'} className="text-sm py-1">
+                  🌟 {report.trust_score.company_tier}
+                </Badge>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {/* Left Column: Details & Reviews */}
+        <div className="md:col-span-2 space-y-8">
+          
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xl flex items-center gap-2">
+                <Star className="text-yellow-500" /> What Employees Say
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-4 mb-6">
+                <div className="text-4xl font-bold">{report.reviews.overall_rating}</div>
+                <div>
+                  <div className="flex text-yellow-500">★★★★☆</div>
+                  <div className="text-sm text-gray-500">Based on {report.reviews.review_count} reviews</div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+                  <h4 className="font-semibold text-green-800 mb-2">Top Pros</h4>
+                  <ul className="space-y-1 text-sm text-green-900">
+                    {report.reviews.top_pros.map((pro, i) => <li key={i}>✓ {pro}</li>)}
+                  </ul>
+                </div>
+                <div className="bg-red-50 p-4 rounded-lg border border-red-100">
+                  <h4 className="font-semibold text-red-800 mb-2">Top Cons</h4>
+                  <ul className="space-y-1 text-sm text-red-900">
+                    {report.reviews.top_cons.map((con, i) => <li key={i}>✗ {con}</li>)}
+                  </ul>
+                </div>
+              </div>
+              
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                <p className="text-blue-900 font-medium">
+                  <span className="font-bold">🎓 Student Verdict:</span> {report.reviews.student_verdict}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xl">Open Opportunities ({report.opportunities.length})</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {report.opportunities.map((opp, idx) => (
+                <div key={idx} className="p-4 border rounded-lg hover:bg-slate-50 transition-colors">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-semibold text-lg">{opp.title}</h3>
+                    <Badge variant={opp.type === 'internship' ? 'default' : 'outline'}>
+                      {opp.type === 'internship' ? 'Internship' : 'Full-Time'}
+                    </Badge>
+                  </div>
+                  <div className="flex gap-4 text-sm text-gray-600 mb-3">
+                    <span className="flex items-center"><MapPin className="w-3 h-3 mr-1"/>{opp.location}</span>
+                    {opp.stipend && <span>💰 {opp.stipend}</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {opp.skills_required.map(skill => (
+                      <span key={skill} className="px-2 py-1 bg-gray-100 text-xs rounded-md">{skill}</span>
+                    ))}
+                  </div>
+                  <Button size="sm" variant="outline" asChild>
+                    <a href={opp.apply_url || "#"} target="_blank" rel="noopener noreferrer">
+                      Apply via {opp.source} <ExternalLink className="w-3 h-3 ml-1" />
+                    </a>
+                  </Button>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+        </div>
+
+        {/* Right Column: Score Breakdown & Connect */}
+        <div className="space-y-8">
+          
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xl">Score Breakdown</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Hiring Activity</span>
+                  <span className="font-medium">{report.trust_score.breakdown.hiring}/25</span>
+                </div>
+                <Progress value={(report.trust_score.breakdown.hiring / 25) * 100} className="h-2" />
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Employee Reviews</span>
+                  <span className="font-medium">{report.trust_score.breakdown.reviews}/20</span>
+                </div>
+                <Progress value={(report.trust_score.breakdown.reviews / 20) * 100} className="h-2" />
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Legitimacy</span>
+                  <span className="font-medium">{report.trust_score.breakdown.legitimacy}/15</span>
+                </div>
+                <Progress value={(report.trust_score.breakdown.legitimacy / 15) * 100} className="h-2" />
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Social Presence</span>
+                  <span className="font-medium">{report.trust_score.breakdown.social}/15</span>
+                </div>
+                <Progress value={(report.trust_score.breakdown.social / 15) * 100} className="h-2" />
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Intern Friendliness</span>
+                  <span className="font-medium">{report.trust_score.breakdown.intern_friendly}/15</span>
+                </div>
+                <Progress value={(report.trust_score.breakdown.intern_friendly / 15) * 100} className="h-2" />
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Growth Signals</span>
+                  <span className="font-medium">{report.trust_score.breakdown.growth}/10</span>
+                </div>
+                <Progress value={(report.trust_score.breakdown.growth / 10) * 100} className="h-2" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xl">Connect With Them</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {report.social_media.linkedin_url && (
+                <Button variant="outline" className="w-full justify-start" asChild>
+                  <a href={report.social_media.linkedin_url} target="_blank" rel="noopener noreferrer">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png" alt="LinkedIn" className="w-4 h-4 mr-2" />
+                    LinkedIn
+                  </a>
+                </Button>
+              )}
+              {report.social_media.twitter_url && (
+                <Button variant="outline" className="w-full justify-start" asChild>
+                  <a href={report.social_media.twitter_url} target="_blank" rel="noopener noreferrer">
+                    <span className="font-bold mr-2">𝕏</span> Twitter
+                  </a>
+                </Button>
+              )}
+              <Button variant="default" className="w-full" asChild>
+                <a href={`/api/company/${encodeURIComponent(companyName)}/report/pdf`} target="_blank">
+                  Download PDF Report
+                </a>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-900 text-white">
+            <CardContent className="p-6">
+              <div className="flex items-start gap-4">
+                <TrendingUp className="text-green-400 mt-1 shrink-0" />
+                <div>
+                  <h4 className="font-bold mb-1">Company Growth</h4>
+                  <p className="text-sm text-slate-300">{report.growth.description}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+        </div>
+      </div>
     </div>
   );
 }

@@ -88,3 +88,32 @@ def _format_history(history_text: str) -> str:
 class PDFGenerationError(Exception):
     """Custom exception for PDF generation failures."""
     pass
+
+
+def create_student_pdf(report_data: Dict) -> bytes:
+    if not _weasyprint_available:
+        raise PDFGenerationError("PDF generation is not available.")
+    try:
+        template = env.get_template("student_report.html")
+        template_data = {
+            "company_name": report_data.get("company_name", "Unknown Company"),
+            "trust_score": report_data.get("trust_score", {}).get("total_score", 0),
+            "company_tier": report_data.get("trust_score", {}).get("company_tier", "Unknown"),
+            "verdict": report_data.get("trust_score", {}).get("verdict", ""),
+            "industry": report_data.get("basic_info", {}).get("industry", "Unknown"),
+            "founded": report_data.get("basic_info", {}).get("founded", "Unknown"),
+            "growth_description": report_data.get("growth", {}).get("description", "No data"),
+            "review_rating": report_data.get("reviews", {}).get("overall_rating", 0),
+            "review_count": report_data.get("reviews", {}).get("review_count", 0),
+            "top_pros": report_data.get("reviews", {}).get("top_pros", []),
+            "top_cons": report_data.get("reviews", {}).get("top_cons", []),
+            "opportunities": report_data.get("opportunities", []),
+            "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        }
+        html_content = template.render(**template_data)
+        html = HTML(string=html_content)
+        return html.write_pdf()
+    except Exception as e:
+        logger.error(f"PDF generation error: {e}")
+        raise PDFGenerationError(f"Failed to generate PDF: {str(e)}") from e
+

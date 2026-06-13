@@ -27,3 +27,37 @@ class CachedReport(Base):
     
     def __repr__(self):
         return f"<CachedReport(company_name='{self.company_name}', is_verified={self.is_verified}, updated_at={self.updated_at})>"
+
+class CachedOpportunity(Base):
+    __tablename__ = "cached_opportunities"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    company_name = Column(String, index=True)
+    title = Column(String)
+    location = Column(String)
+    type = Column(String)
+    stipend = Column(String)
+    apply_url = Column(String)
+    source = Column(String)
+    fetched_at = Column(DateTime, default=datetime.utcnow)
+
+class CachedReview(Base):
+    __tablename__ = "cached_reviews"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    company_name = Column(String, unique=True, index=True)
+    overall_rating = Column(Float)
+    review_count = Column(Integer)
+    pros_json = Column(Text)
+    cons_json = Column(Text)
+    student_verdict = Column(Text)
+
+class CachedSocialMedia(Base):
+    __tablename__ = "cached_social_media"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    company_name = Column(String, unique=True, index=True)
+    linkedin_url = Column(String)
+    instagram_url = Column(String)
+    twitter_url = Column(String)
+    facebook_url = Column(String)

@@ -94,3 +94,53 @@ class ErrorResponse(BaseModel):
     error: str
     data: None = None
     metadata: Optional[Dict[str, Any]] = None
+
+
+class SocialMediaLinks(BaseModel):
+    linkedin_url: Optional[str] = None
+    instagram_url: Optional[str] = None
+    twitter_url: Optional[str] = None
+    facebook_url: Optional[str] = None
+    youtube_url: Optional[str] = None
+    active_platforms: List[str] = Field(default_factory=list)
+
+class OpportunityItem(BaseModel):
+    title: str
+    company_name: str
+    location: str
+    type: str
+    stipend: Optional[str] = None
+    duration: Optional[str] = None
+    skills_required: List[str] = Field(default_factory=list)
+    apply_url: Optional[str] = None
+    source: str
+
+class CompanyReviewSummary(BaseModel):
+    overall_rating: float
+    work_life_balance: Optional[float] = None
+    career_growth: Optional[float] = None
+    review_count: int
+    top_pros: List[str] = Field(default_factory=list)
+    top_cons: List[str] = Field(default_factory=list)
+    student_verdict: str
+
+class GrowthIndicator(BaseModel):
+    trend: str
+    growth_pct: Optional[float] = None
+    description: str
+
+class StudentTrustScore(BaseModel):
+    total_score: int = Field(ge=0, le=100)
+    company_tier: str
+    is_recommended: bool
+    breakdown: Dict[str, int] = Field(default_factory=dict)
+    verdict: str
+
+class CompanyStudentReport(BaseModel):
+    company_name: str
+    trust_score: StudentTrustScore
+    growth: GrowthIndicator
+    social_media: SocialMediaLinks
+    reviews: CompanyReviewSummary
+    opportunities: List[OpportunityItem] = Field(default_factory=list)
+    basic_info: Dict[str, Any] = Field(default_factory=dict)
