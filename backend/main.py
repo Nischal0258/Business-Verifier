@@ -311,3 +311,41 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+import asyncio
+from typing import List
+from pydantic import BaseModel
+
+class CompareRequest(BaseModel):
+    companies: List[str]
+
+@app.post("/api/v1/student/compare")
+async def compare_companies(request: CompareRequest):
+    try:
+        from agents.crew import build_comparator_crew
+        crew = build_comparator_crew(request.companies)
+        # CrewAI kickoff is synchronous, so we run it in a thread
+        result = await asyncio.to_thread(crew.kickoff)
+        # Parse the output assuming the agent returns JSON
+        try:
+            comparison_data = json.loads(result.raw)
+        except:
+            comparison_data = {"raw_output": result.raw}
+        return {"success": True, "comparison": comparison_data}
+    except Exception as e:
+        logger.error(f"Error comparing companies: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/company/{company_name}/report")
+async def get_company_report(company_name: str):
+    try:
+        from agents.crew import build_student_report_crew
+        crew = build_student_report_crew(company_name)
+        result = await asyncio.to_thread(crew.kickoff)
+        try:
+            report_data = json.loads(result.raw)
+        except:
+            report_data = {"raw_output": result.raw}
+        return {"success": True, "report": report_data}
+    except Exception as e:
+        logger.error(f"Error generating report for {company_name}: {e}")
+        return {"success": False, "error": str(e)}
