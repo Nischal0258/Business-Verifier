@@ -31,53 +31,31 @@ export default function ExplorePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // In a real app, this would fetch from /api/explore
-    // For now, using mock data for the UI
-    setTimeout(() => {
-      setOpportunities([
-        {
-          title: "Software Engineering Intern",
-          company_name: "TechStartup Ltd",
-          location: "Bangalore",
-          type: "internship",
-          stipend: "₹15,000/mo",
-          duration: "3 months",
-          skills_required: ["Python", "React"],
-          apply_url: "#",
-          source: "Internshala",
-          company_tier: "Rising Star",
-          trust_score: 72
-        },
-        {
-          title: "Data Analyst",
-          company_name: "GrowthCo Inc",
-          location: "Remote",
-          type: "full_time",
-          stipend: "₹20,000/mo",
-          duration: "6 months",
-          skills_required: ["SQL", "Python"],
-          apply_url: "#",
-          source: "LinkedIn",
-          company_tier: "Established",
-          trust_score: 85
-        },
-        {
-          title: "Frontend Developer",
-          company_name: "CodeCraft Pvt",
-          location: "Hyderabad",
-          type: "full_time",
-          stipend: "₹8 LPA",
-          duration: null,
-          skills_required: ["React", "TypeScript"],
-          apply_url: "#",
-          source: "Naukri",
-          company_tier: "Emerging",
-          trust_score: 58
+    async function fetchOpportunities() {
+      try {
+        setLoading(true);
+        // Build query string
+        const params = new URLSearchParams();
+        if (query) params.append('q', query);
+        if (location) params.append('location', location);
+        
+        const res = await fetch(`http://localhost:8000/api/explore?${params.toString()}`);
+        const data = await res.json();
+        
+        if (data.success) {
+          setOpportunities(data.opportunities || []);
+        } else {
+          setOpportunities([]);
         }
-      ]);
-      setLoading(false);
-    }, 1000);
-  }, []);
+      } catch (err) {
+        console.error("Error fetching opportunities:", err);
+        setOpportunities([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchOpportunities();
+  }, [query, location]);
 
   return (
     <div className="container mx-auto py-8">

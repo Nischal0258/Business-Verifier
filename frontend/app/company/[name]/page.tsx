@@ -14,63 +14,24 @@ export default function CompanyPage({ params }: { params: { name: string } }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // In a real app, fetch from /api/company/{name}/report
-    // For now, mock data
-    setTimeout(() => {
-      setReport({
-        company_name: companyName,
-        trust_score: {
-          total_score: 72,
-          company_tier: "Rising Star",
-          is_recommended: true,
-          breakdown: {
-            hiring: 18,
-            reviews: 14,
-            social: 12,
-            legitimacy: 15,
-            intern_friendly: 8,
-            growth: 5
-          },
-          verdict: "A solid rising star startup with active hiring and decent reviews."
-        },
-        growth: {
-          trend: "Growing",
-          growth_pct: 42,
-          description: "Revenue grew 42% year-over-year"
-        },
-        social_media: {
-          linkedin_url: "https://linkedin.com/company/mock",
-          twitter_url: "https://twitter.com/mock",
-          active_platforms: ["LinkedIn", "Twitter", "Instagram"]
-        },
-        reviews: {
-          overall_rating: 4.1,
-          review_count: 38,
-          top_pros: ["Great learning environment", "Supportive mentors"],
-          top_cons: ["Below-market stipend", "Fast-paced can be stressful"],
-          student_verdict: "Excellent for interns who want hands-on experience."
-        },
-        opportunities: [
-          {
-            title: "Software Engineering Intern",
-            company_name: companyName,
-            location: "Bangalore",
-            type: "internship",
-            stipend: "₹15,000/mo",
-            duration: "3 months",
-            skills_required: ["Python", "React"],
-            apply_url: "#",
-            source: "Internshala"
-          }
-        ],
-        basic_info: {
-          industry: "IT Services",
-          founded: "2019",
-          employees: 45
+    async function fetchReport() {
+      try {
+        setLoading(true);
+        const res = await fetch(`http://localhost:8000/api/company/${encodeURIComponent(companyName)}/report`);
+        const data = await res.json();
+        
+        if (data.success && data.report) {
+          setReport(data.report);
+        } else {
+          console.error("Failed to load report:", data.error);
         }
-      });
-      setLoading(false);
-    }, 1500);
+      } catch (err) {
+        console.error("Error fetching company report:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchReport();
   }, [companyName]);
 
   if (loading) {

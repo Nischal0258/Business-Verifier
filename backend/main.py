@@ -1,5 +1,9 @@
 import asyncio
 import json
+from sqlalchemy.future import select
+from db_models import CachedOpportunity, CachedSocialMedia, CachedReview
+from database import get_db
+from fastapi import Depends
 import logging
 import sys
 import traceback
@@ -344,20 +348,66 @@ async def get_company_report(company_name: str):
         return {"success": False, "error": str(e)}
 
 @app.get("/api/company/{company_name}/opportunities")
-async def get_company_opportunities(company_name: str):
-    return {"success": True, "opportunities": []}
+async def get_company_opportunities(company_name: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(CachedOpportunity).where(CachedOpportunity.company_name.ilike(company_name)))
+    opps = result.scalars().all()
+    opportunities = [{
+        "title": o.title, "company_name": o.company_name, "location": o.location,
+        "type": o.type, "stipend": o.stipend, "apply_url": o.apply_url, "source": o.source
+    } for o in opps]
+    return {"success": True, "opportunities": opportunities}
 
 @app.get("/api/company/{company_name}/social")
-async def get_company_social(company_name: str):
-    return {"success": True, "social": {}}
+async def get_company_social(company_name: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(CachedSocialMedia).where(CachedSocialMedia.company_name.ilike(company_name)))
+    social = result.scalar_one_or_none()
+    if social:
+        data = {
+            "linkedin_url": social.linkedin_url, "instagram_url": social.instagram_url,
+            "twitter_url": social.twitter_url, "facebook_url": social.facebook_url
+        }
+    else:
+        data = {}
+    return {"success": True, "social": data}
 
 @app.get("/api/company/{company_name}/reviews")
-async def get_company_reviews(company_name: str):
-    return {"success": True, "reviews": {}}
+async def get_company_reviews(company_name: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(CachedReview).where(CachedReview.company_name.ilike(company_name)))
+    review = result.scalar_one_or_none()
+    if review:
+        data = {
+            "overall_rating": review.overall_rating, "review_count": review.review_count,
+            "pros": json.loads(review.pros_json) if review.pros_json else [],
+            "cons": json.loads(review.cons_json) if review.cons_json else [],
+            "student_verdict": review.student_verdict
+        }
+    else:
+        data = {}
+    return {"success": True, "reviews": data}
 
 @app.get("/api/explore")
-async def explore_opportunities(q: str = "", location: str = "", type: str = "all", industry: str = "", min_stipend: int = 0, company_tier: str = "all", sort: str = "relevance", page: int = 1, limit: int = 20):
-    return {"success": True, "opportunities": [], "total": 0}
+async def explore_opportunities(q: str = "", location: str = "", type: str = "all", industry: str = "", min_stipend: int = 0, company_tier: str = "all", sort: str = "relevance", page: int = 1, limit: int = 20, db: AsyncSession = Depends(get_db)):
+    query = select(CachedOpportunity)
+    if q:
+        query = query.where(CachedOpportunity.title.ilike(f"%{q}%"))
+    if location:
+        query = query.where(CachedOpportunity.location.ilike(f"%{location}%"))
+    if type and type != "all":
+        query = query.where(CachedOpportunity.type.ilike(type))
+    
+    # Exclude those without title or company
+    query = query.where(CachedOpportunity.title.isnot(None))
+    
+    query = query.limit(limit).offset((page - 1) * limit)
+    result = await db.execute(query)
+    opps = result.scalars().all()
+    
+    opportunities = [{
+        "title": o.title, "company_name": o.company_name, "location": o.location,
+        "type": o.type, "stipend": o.stipend, "apply_url": o.apply_url, "source": o.source,
+        "company_tier": "Rising Star", "trust_score": 75, "skills_required": []
+    } for o in opps]
+    return {"success": True, "opportunities": opportunities, "total": len(opportunities)}
 
 @app.get("/api/company/{company_name}/report/pdf")
 async def get_company_report_pdf(company_name: str):
