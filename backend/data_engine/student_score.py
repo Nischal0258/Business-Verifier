@@ -12,7 +12,7 @@ def calculate_student_trust_score(company_data: dict, opportunities: list, socia
     breakdown['hiring'] = pts
     
     # Reviews
-    rating = reviews.get('average_rating')
+    rating = reviews.get('overall_rating', 0)
     if not rating: pts = 5
     elif rating < 2.5: pts = 3
     elif rating <= 3.5: pts = 10
@@ -22,7 +22,7 @@ def calculate_student_trust_score(company_data: dict, opportunities: list, socia
     breakdown['reviews'] = pts
     
     # Social
-    active = sum(1 for v in social_media.values() if v)
+    active = len(social_media.get('active_platforms', []))
     if active == 0: pts = 0
     elif active <= 2: pts = 7
     elif active <= 4: pts = 12
@@ -35,19 +35,26 @@ def calculate_student_trust_score(company_data: dict, opportunities: list, socia
     if company_data.get('website'): legit += 5
     if company_data.get('description'): legit += 4
     if company_data.get('industry'): legit += 3
-    if company_data.get('jurisdiction') or company_data.get('headquarters_info'): legit += 3
+    if company_data.get('jurisdiction') or company_data.get('headquarters'): legit += 3
     total += legit
     breakdown['legitimacy'] = legit
     
     # Intern friendly
     intern = 0
-    has_intern = any('intern' in str(o.get('title','')).lower() for o in opportunities)
+    has_intern = any('intern' in str(o.get('type','')).lower() or 'intern' in str(o.get('title','')).lower() for o in opportunities)
     if has_intern: intern += 8
+    
+    has_stipend = any(bool(o.get('stipend')) for o in opportunities)
+    if has_stipend: intern += 4
+    
+    has_duration = any(bool(o.get('duration')) for o in opportunities)
+    if has_duration: intern += 3
+        
     total += intern
     breakdown['intern_friendly'] = intern
     
     # Growth (mocked for now)
-    growth = 5
+    growth = 7
     total += growth
     breakdown['growth'] = growth
     
