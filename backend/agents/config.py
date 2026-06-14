@@ -94,6 +94,18 @@ class AgentConfig:
         social_media_aggregator, review_analyzer, data_validator, student_matcher.
         """
         return {
+            "crew_manager": {
+                "role": "Crew Manager",
+                "goal": (
+                    "Understand student queries, delegate tasks to specialized sub-agents, and synthesize responses with trust scores."
+                ),
+                "backstory": (
+                    "You are a friendly, student-focused AI manager. You listen to what students need, delegate research tasks to the right specialists, and compile clear, helpful answers with company trust scores if applicable."
+                ),
+                "allow_delegation": True,
+                "verbose": True,
+                "llm_provider": "gemini",
+            },
             "api_orchestrator": {
                 "role": "Manager",
                 "goal": (

@@ -1,8 +1,8 @@
 """CrewAI crew builders for the student-first company research pipeline.
 
-Exposes two public functions consumed by ``main.py``:
+Exposes three public functions consumed by ``main.py``:
 
-    from agents.crew import build_student_report_crew, build_comparator_crew
+    from agents.crew import build_student_report_crew, build_comparator_crew, build_conversational_crew
 """
 
 import logging
@@ -246,5 +246,59 @@ def build_comparator_crew(company_list: List[str]) -> Crew:
         "Built comparator crew for %d companies: %s",
         len(company_list),
         names,
+    )
+    return crew
+
+
+def build_conversational_crew(user_query: str) -> Crew:
+    """Build a conversational crew with Crew Manager that understands student queries.
+
+    Args:
+        user_query: Natural language query from student.
+
+    Returns:
+        A ready-to-kickoff CrewAI Crew.
+    """
+    cfg = AgentConfig()
+    crew_manager = _make_agent(cfg, "crew_manager", allow_delegation=True)
+    scout = _make_agent(cfg, "company_researcher")
+    hunter = _make_agent(cfg, "job_discovery_specialist")
+    social = _make_agent(cfg, "social_media_aggregator")
+    reviewer = _make_agent(cfg, "review_analyzer")
+    validator = _make_agent(cfg, "data_validator")
+
+    task_understand = Task(
+        description=(
+            f"Analyze the student's query: '{user_query}'. "
+            "Determine what specific company insights, trust score data, or comparisons they need. "
+            "If they mention company names, extract them. Decide which sub-agents to involve. "
+            "Delegate tasks to appropriate agents as needed."
+        ),
+        expected_output="A clear plan for answering the student's query, with delegated tasks to sub-agents.",
+        agent=crew_manager,
+    )
+
+    task_answer = Task(
+        description=(
+            f"Synthesize all information gathered by sub-agents to answer the student's query: '{user_query}'. "
+            "Provide a clear, student-friendly response with trust scores if applicable."
+        ),
+        expected_output="A friendly, informative, student-focused answer to the original query.",
+        agent=crew_manager,
+        context=[task_understand],
+    )
+
+    crew = Crew(
+        agents=[crew_manager, scout, hunter, social, reviewer, validator],
+        tasks=[task_understand, task_answer],
+        process=Process.hierarchical,
+        manager_agent=crew_manager,
+        verbose=True,
+    )
+
+    logger.info(
+        "Built conversational crew for query: '%s' with %d agents",
+        user_query[:50] + ("..." if len(user_query) > 50 else ""),
+        len(crew.agents),
     )
     return crew
