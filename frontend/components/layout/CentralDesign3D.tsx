@@ -60,7 +60,7 @@ function ParticleGlobe({ scrollYProgress }: { scrollYProgress: any }) {
       <Points ref={pointsRef} positions={positions} stride={3} frustumCulled={false}>
         <PointMaterial
           transparent
-          color="#D4AF37"
+          color="#64CEFB"
           size={0.018}
           sizeAttenuation={true}
           depthWrite={false}
@@ -71,7 +71,7 @@ function ParticleGlobe({ scrollYProgress }: { scrollYProgress: any }) {
       {/* Inner Wireframe Globe */}
       <Sphere ref={sphereRef} args={[2.3, 32, 32]}>
         <meshBasicMaterial 
-          color="#B8960C"
+          color="#A855F7"
           wireframe 
           transparent 
           opacity={0.08} 
@@ -82,7 +82,7 @@ function ParticleGlobe({ scrollYProgress }: { scrollYProgress: any }) {
       {/* Core Glow */}
       <Sphere args={[2.0, 16, 16]}>
         <meshBasicMaterial 
-          color="#D4AF37"
+          color="#64CEFB"
           transparent 
           opacity={0.03} 
           blending={THREE.AdditiveBlending}

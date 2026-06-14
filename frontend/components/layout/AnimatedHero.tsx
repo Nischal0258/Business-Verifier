@@ -423,8 +423,8 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
               className="glass-nav flex items-center gap-2 text-sm py-2.5 px-5 rounded-xl transition-all duration-300"
               style={{ color: "var(--accent-primary-light)" }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(212, 175, 55, 0.15)";
-                e.currentTarget.style.borderColor = "rgba(212, 175, 55, 0.3)";
+                e.currentTarget.style.background = "rgba(100, 206, 251, 0.15)";
+                e.currentTarget.style.borderColor = "rgba(100, 206, 251, 0.3)";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = "transparent";

@@ -56,7 +56,7 @@ function AboutSection() {
           <div>
             <motion.span initial={{ opacity: 0, y: 15, scale: 0.95 }} animate={inView ? { opacity: 1, y: 0, scale: 1 } : {}} transition={{ duration: 0.5 }}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-[0.15em] mb-6"
-              style={{ background: "var(--accent-glow)", color: "var(--accent-purple-light)", border: "1px solid rgba(245, 158, 11, 0.2)" }}>
+              style={{ background: "var(--accent-glow)", color: "var(--accent-purple-light)", border: "1px solid rgba(100, 206, 251, 0.2)" }}>
               About VerifyIQ
             </motion.span>
             <motion.h2 initial={{ opacity: 0, y: 25 }} animate={inView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.7, delay: 0.1 }}
@@ -138,7 +138,7 @@ function FeaturesSection() {
         <motion.div style={{ scale: headingScale }} className="text-center mb-16">
           <motion.span initial={{ opacity: 0, y: 15, scale: 0.95 }} animate={inView ? { opacity: 1, y: 0, scale: 1 } : {}} transition={{ duration: 0.5 }}
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-[0.15em] mb-6"
-            style={{ background: "var(--accent-glow)", color: "var(--accent-purple-light)", border: "1px solid rgba(245, 158, 11, 0.2)" }}>
+            style={{ background: "var(--accent-glow)", color: "var(--accent-purple-light)", border: "1px solid rgba(100, 206, 251, 0.2)" }}>
             Features
           </motion.span>
           <motion.h2 initial={{ opacity: 0, y: 25 }} animate={inView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.7, delay: 0.1 }}
@@ -229,7 +229,7 @@ function PricingSection() {
         <div className="text-center mb-16">
           <motion.span initial={{ opacity: 0, y: 15, scale: 0.95 }} animate={inView ? { opacity: 1, y: 0, scale: 1 } : {}} transition={{ duration: 0.5 }}
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-[0.15em] mb-6"
-            style={{ background: "var(--accent-glow)", color: "var(--accent-purple-light)", border: "1px solid rgba(245, 158, 11, 0.2)" }}>
+            style={{ background: "var(--accent-glow)", color: "var(--accent-purple-light)", border: "1px solid rgba(100, 206, 251, 0.2)" }}>
             Pricing
           </motion.span>
           <motion.h2 initial={{ opacity: 0, y: 25 }} animate={inView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.7, delay: 0.1 }}
@@ -311,7 +311,7 @@ function CTASection() {
       <motion.div style={{ y: sectionY, opacity: sectionOpacity }} className="max-w-3xl mx-auto text-center relative z-10">
         <motion.span initial={{ opacity: 0, y: 15, scale: 0.95 }} animate={inView ? { opacity: 1, y: 0, scale: 1 } : {}} transition={{ duration: 0.5 }}
           className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-[0.15em] mb-6"
-          style={{ background: "var(--accent-glow)", color: "var(--accent-purple-light)", border: "1px solid rgba(245, 158, 11, 0.25)" }}>
+          style={{ background: "var(--accent-glow)", color: "var(--accent-purple-light)", border: "1px solid rgba(100, 206, 251, 0.25)" }}>
           Ready to Start?
         </motion.span>
 

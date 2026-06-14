@@ -129,14 +129,14 @@ export default function AdvancedCursor({
           width: 40,
           height: 40,
           borderColor: isHoveringGlobe 
-            ? "rgba(212, 175, 55, 0.8)" 
+            ? "rgba(100, 206, 251, 0.8)" 
             : isHoveringInteractive 
               ? "rgba(250, 248, 245, 0.6)" 
               : "rgba(250, 248, 245, 0.4)",
           scale: ringScale,
           opacity: ringOpacity,
           backgroundColor: isHoveringGlobe 
-            ? "rgba(212, 175, 55, 0.1)" 
+            ? "rgba(100, 206, 251, 0.1)" 
             : "transparent",
         }}
         animate={{
@@ -152,7 +152,7 @@ export default function AdvancedCursor({
           width: 8,
           height: 8,
           backgroundColor: isHoveringGlobe 
-            ? "rgba(212, 175, 55, 1)" 
+            ? "rgba(100, 206, 251, 1)" 
             : isHoveringInteractive 
               ? "rgba(250, 248, 245, 0.9)" 
               : "rgba(250, 248, 245, 0.8)",
@@ -179,7 +179,8 @@ export default function AdvancedCursor({
             top: "50%",
             translateX: "-50%",
             translateY: "-50%",
-            border: "1px solid rgba(212, 175, 55, 0.3)",
+            border: "1px solid rgba(100, 206, 251, 0.3)",
+            boxShadow: "0 0 20px rgba(100, 206, 251, 0.2)",
           }}
           animate={{
             scale: [1, 1.2, 1],

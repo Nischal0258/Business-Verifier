@@ -83,7 +83,7 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["Fira Sans", "system-ui", "sans-serif"],
+        sans: ["Inter", "sans-serif"],
         mono: ["Fira Code", "monospace"],
       },
       boxShadow: {

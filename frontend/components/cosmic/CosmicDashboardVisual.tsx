@@ -139,7 +139,7 @@ function drawStarConnections(ctx: CanvasRenderingContext2D, particles: CosmicPar
         const depthFactor = ((1000 - particles[i].z) / 1000 + (1000 - particles[j].z) / 1000) / 2;
         const opacity = (1 - distance / maxDistance) * 0.15 * depthFactor;
 
-        ctx.strokeStyle = `rgba(212, 175, 55, ${opacity})`;
+        ctx.strokeStyle = `rgba(100, 206, 251, ${opacity})`;
         ctx.lineWidth = 0.5 * depthFactor;
         ctx.beginPath();
         ctx.moveTo(particles[i].x, particles[i].y);
@@ -321,8 +321,8 @@ export default function CosmicDashboardVisual({
           className="absolute inset-0"
           style={{
             background: `
-              radial-gradient(ellipse at 30% 20%, rgba(212, 175, 55, 0.15) 0%, transparent 50%),
-              radial-gradient(ellipse at 70% 80%, rgba(59, 107, 140, 0.12) 0%, transparent 50%),
+              radial-gradient(ellipse at 30% 20%, rgba(100, 206, 251, 0.15) 0%, transparent 50%),
+              radial-gradient(ellipse at 70% 80%, rgba(168, 85, 247, 0.15) 0%, transparent 50%),
               radial-gradient(ellipse at 50% 50%, rgba(139, 58, 58, 0.08) 0%, transparent 60%),
               linear-gradient(180deg, #0A0F1C 0%, #111827 100%)
             `,
@@ -343,12 +343,12 @@ export default function CosmicDashboardVisual({
         className="absolute inset-0 pointer-events-none opacity-30"
         style={{
           backgroundImage: `
-            radial-gradient(circle at 20% 30%, rgba(212, 175, 55, 0.4) 0%, transparent 0.5%),
-            radial-gradient(circle at 80% 70%, rgba(212, 175, 55, 0.3) 0%, transparent 0.3%),
-            radial-gradient(circle at 40% 80%, rgba(212, 175, 55, 0.2) 0%, transparent 0.4%),
-            radial-gradient(circle at 60% 20%, rgba(212, 175, 55, 0.35) 0%, transparent 0.3%),
-            radial-gradient(circle at 90% 40%, rgba(212, 175, 55, 0.25) 0%, transparent 0.5%),
-            radial-gradient(circle at 10% 60%, rgba(212, 175, 55, 0.3) 0%, transparent 0.4%)
+            radial-gradient(circle at 20% 30%, rgba(100, 206, 251, 0.4) 0%, transparent 0.5%),
+            radial-gradient(circle at 80% 70%, rgba(100, 206, 251, 0.3) 0%, transparent 0.3%),
+            radial-gradient(circle at 40% 80%, rgba(100, 206, 251, 0.2) 0%, transparent 0.4%),
+            radial-gradient(circle at 60% 20%, rgba(100, 206, 251, 0.35) 0%, transparent 0.3%),
+            radial-gradient(circle at 90% 40%, rgba(100, 206, 251, 0.25) 0%, transparent 0.5%),
+            radial-gradient(circle at 10% 60%, rgba(100, 206, 251, 0.3) 0%, transparent 0.4%)
           `,
           backgroundSize: "100% 100%",
         }}

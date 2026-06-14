@@ -1,525 +1,373 @@
 "use client";
 
-import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import HeroSection from "@/components/verifyiq/HeroSection";
-import TurnoverChart from "@/components/dashboard/TurnoverChart";
-import CompanyInformationChapter from "@/components/dashboard/CompanyInformationChapter";
-import { CompanyData } from "@/types";
-import { fetchCompanyData, downloadCompanyPdf } from "@/lib/api";
-import {
-  ArrowLeft,
-  BookOpenText,
-  Building2,
-  Clock,
-  Download,
-  FileBarChart,
-  Lightbulb,
-  LineChart,
-  Shield,
-  Sparkles,
-  TrendingUp,
-} from "lucide-react";
+import { useState, useEffect } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { MapPin, Briefcase, IndianRupee, Star, ExternalLink, ChevronDown, Building2, Award, BriefcaseBusiness, Compass, ArrowRight } from "lucide-react";
+import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
+import { FadeIn } from "@/components/ui/FadeIn";
+import { AnimatedHeading } from "@/components/ui/AnimatedHeading";
+import useEmblaCarousel from "embla-carousel-react";
+import Autoplay from "embla-carousel-autoplay";
+import OnboardingModal from "@/components/OnboardingModal";
+import JobDetailsDrawer from "@/components/JobDetailsDrawer";
 
-interface SearchHistoryItem {
-  id: string;
-  company: string;
-  score: number;
-  date: string;
-  status: "verified" | "unverified" | "elevated";
+interface TopCompanyCategory {
+  category: string;
+  count: string;
+  companies: string[];
 }
 
-const searchHistory: SearchHistoryItem[] = [
-  { id: "1", company: "Apple Inc.", score: 94, date: "2 hours ago", status: "verified" },
-  { id: "2", company: "Tesla Inc.", score: 89, date: "5 hours ago", status: "verified" },
-  { id: "3", company: "Microsoft Corp.", score: 97, date: "1 day ago", status: "verified" },
-  { id: "4", company: "Neuralink LLC", score: 62, date: "2 days ago", status: "elevated" },
+interface FeaturedCompany {
+  name: string;
+  rating: number;
+  reviews_count: string;
+  description: string;
+  tags: string[];
+}
+
+interface ExploreOpportunity {
+  title: string;
+  company_name: string;
+  location: string;
+  type: string;
+  stipend: string | null;
+  duration: string | null;
+  skills_required: string[];
+  apply_url: string | null;
+  source: string;
+  company_tier?: string;
+  trust_score?: number;
+}
+
+// Quick filter pills data
+const QUICK_FILTERS = [
+  { icon: <MapPin size={16}/>, label: "Remote" },
+  { icon: <Building2 size={16}/>, label: "MNC" },
+  { icon: <Award size={16}/>, label: "Startup" },
+  { icon: <BriefcaseBusiness size={16}/>, label: "Internship" },
+  { icon: <IndianRupee size={16}/>, label: "Paid" },
 ];
 
-function toCompactCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: 2,
-  }).format(value || 0);
-}
+export default function DashboardPage() {
+  const [query, setQuery] = useState("");
+  const [location, setLocation] = useState("");
+  const [opportunities, setOpportunities] = useState<ExploreOpportunity[]>([]);
+  const [topCompanies, setTopCompanies] = useState<TopCompanyCategory[]>([]);
+  const [featuredCompanies, setFeaturedCompanies] = useState<FeaturedCompany[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [selectedJob, setSelectedJob] = useState<any | null>(null);
 
-function historyParagraphs(history: string): string[] {
-  if (!history) return [];
-  const cleaned = history.trim();
-  if (!cleaned) return [];
+  const [topEmblaRef] = useEmblaCarousel({ loop: true, align: "start" }, [Autoplay({ delay: 3000, stopOnInteraction: false })]);
+  const [featEmblaRef] = useEmblaCarousel({ loop: true, align: "start" }, [Autoplay({ delay: 4000, stopOnInteraction: false })]);
 
-  const chunks = cleaned
-    .split(/\n{2,}/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (chunks.length >= 2) return chunks;
-
-  const sentences = cleaned
-    .split(/(?<=[.?!])\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  if (sentences.length <= 4) return [cleaned];
-  const midpoint = Math.ceil(sentences.length / 2);
-  return [sentences.slice(0, midpoint).join(" "), sentences.slice(midpoint).join(" ")];
-}
-
-function getRevenueDelta(data: { year: string; revenue: number }[]): number | null {
-  if (!data || data.length < 2) return null;
-  const sorted = [...data].sort((a, b) => Number(a.year) - Number(b.year));
-  const first = sorted[0]?.revenue ?? 0;
-  const last = sorted[sorted.length - 1]?.revenue ?? 0;
-  if (!first) return null;
-  return ((last - first) / first) * 100;
-}
-
-function strategicInsights(data: CompanyData): string[] {
-  const delta = getRevenueDelta(data.turnover_data);
-  const insights: string[] = [];
-
-  if (data.is_verified) {
-    insights.push("Verification confidence is strong, indicating a consistent public business footprint.");
-  } else {
-    insights.push("Verification confidence is moderate; additional due diligence is recommended before commitment.");
-  }
-
-  if (delta !== null) {
-    insights.push(
-      delta >= 0
-        ? `Revenue trajectory is positive over the observed window, with an estimated growth of ${delta.toFixed(1)}%.`
-        : `Revenue trajectory is under pressure, with an estimated decline of ${Math.abs(delta).toFixed(1)}%.`,
-    );
-  } else {
-    insights.push("Revenue trend cannot be established due to limited disclosed turnover data.");
-  }
-
-  insights.push(
-    "Strategically, leadership should prioritize transparency cadence, investor communication, and geographic risk balancing.",
-  );
-
-  return insights;
-}
-
-function DashboardContent() {
-  const [data, setData] = useState<CompanyData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pdfLoading, setPdfLoading] = useState(false);
-
-  const handleSearch = async (query: string) => {
-    if (!query.trim()) return;
-    setLoading(true);
-    setError(null);
+  const fetchOpportunities = async (searchQuery = query) => {
     try {
-      const result = await fetchCompanyData(query);
-      setData(result);
-    } catch (err: any) {
-      setError(err?.message || "Verification protocol failed. Please try again.");
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (searchQuery) params.append('q', searchQuery);
+      if (location) params.append('location', location);
+      
+      const res = await fetch(`http://localhost:8000/api/explore?${params.toString()}`);
+      const data = await res.json();
+      
+      if (data.success) {
+        setOpportunities(data.opportunities || []);
+        if (data.top_companies) setTopCompanies(data.top_companies);
+        if (data.featured_companies) setFeaturedCompanies(data.featured_companies);
+      }
+    } catch (err) {
+      console.error("Error fetching opportunities:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDownloadPdf = async () => {
-    if (!data || pdfLoading) return;
-    setPdfLoading(true);
-    try {
-      await downloadCompanyPdf(data.company_name);
-    } catch (err: any) {
-      setError(err?.message || "PDF download failed. Please try again.");
-    } finally {
-      setPdfLoading(false);
-    }
-  };
-
-  const easeOut = [0.16, 1, 0.3, 1] as [number, number, number, number];
-  const chapters = [
-    { id: "chapter-history", label: "Chapter I", title: "Company History" },
-    { id: "chapter-company-info", label: "Chapter II", title: "Company Information" },
-    { id: "chapter-analysis", label: "Chapter III", title: "Business Analysis" },
-    { id: "chapter-financials", label: "Chapter IV", title: "Financial Performance" },
-    { id: "chapter-strategy", label: "Chapter V", title: "Strategic Insights" },
-  ];
+  useEffect(() => {
+    fetchOpportunities();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <div className="min-h-screen bg-[#111014] text-[#f4f0e8] font-sans overflow-x-hidden relative scroll-smooth">
-      {/* Subtle grid background */}
-      <div className="fixed inset-0 z-0 opacity-[0.03]" style={{
-        backgroundImage: `
-          linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
-        `,
-        backgroundSize: '60px 60px'
-      }} />
-
-      {/* Radial gradient overlay */}
-      <div className="fixed inset-0 z-0 bg-gradient-radial from-transparent via-transparent to-[#111014]" />
-
-      <AnimatePresence mode="wait">
-        {!data && !loading && !error ? (
-          <motion.div
-            key="hero"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <HeroSection onSearch={handleSearch} />
-          </motion.div>
-        ) : loading ? (
-          <motion.div
-            key="loading"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex min-h-screen flex-col items-center justify-center bg-[#111014]"
-          >
-            <div className="relative flex h-32 w-32 items-center justify-center">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                className="absolute inset-0 rounded-full border-2 border-t-blue-500/50 border-r-transparent border-b-transparent border-l-transparent"
-              />
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                className="absolute inset-4 rounded-full border border-purple-500/30"
-              />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Shield className="h-8 w-8 text-blue-500/60" />
-              </div>
-            </div>
-            <motion.span
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-              className="mt-12 font-mono text-xs uppercase tracking-[0.6em] text-white/40"
-            >
-              Scanning Global Registry...
-            </motion.span>
-          </motion.div>
-        ) : error ? (
-          <motion.div
-            key="error"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="fixed inset-0 z-50 flex min-h-screen flex-col items-center justify-center bg-[#111014] p-10 text-center"
-          >
-            <div className="mb-10 flex h-20 w-20 items-center justify-center rounded-full bg-red-500/10">
-              <Shield className="h-10 w-10 text-red-400/60" />
-            </div>
-            <h2 className="mb-6 max-w-lg text-4xl font-bold leading-tight tracking-tight text-white md:text-5xl">
-              {error}
-            </h2>
-            <button
-              onClick={() => {
-                setError(null);
-                setData(null);
-              }}
-              className="mt-4 rounded-full border border-white/10 bg-white/5 px-10 py-4 font-medium text-white/70 transition-all duration-300 hover:bg-white/10 hover:text-white"
-            >
-              Return to Search
-            </button>
-          </motion.div>
-        ) : data ? (
-          <motion.div
-            key="results"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8 }}
-            className="relative z-10 min-h-screen"
-          >
-            <header className="border-b border-[#d8c7a8]/10 bg-[#111014]/85 backdrop-blur-xl sticky top-0 z-40">
-              <div className="mx-auto max-w-7xl px-6 py-6">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-6">
-                    <button
-                      onClick={() => setData(null)}
-                      className="group flex items-center gap-3 text-[#c7b89c] transition-colors hover:text-[#f4f0e8]"
-                    >
-                      <ArrowLeft size={18} className="transition-transform group-hover:-translate-x-1" />
-                      <span className="font-medium">Back to Search</span>
-                    </button>
-                    <div className="hidden h-8 w-px bg-[#d8c7a8]/20 md:block" />
-                    <h1 className="font-serif text-2xl font-semibold tracking-tight md:text-3xl">
-                      {data.company_name}
-                    </h1>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className={`flex items-center gap-2 rounded-full px-4 py-2 ${
-                      data.is_verified
-                        ? "bg-emerald-500/10 text-emerald-400"
-                        : "bg-amber-500/10 text-amber-400"
-                    }`}>
-                      <div className={`h-2 w-2 rounded-full ${
-                        data.is_verified ? "bg-emerald-400" : "bg-amber-400"
-                      }`} />
-                      <span className="text-sm font-medium">
-                        {data.is_verified ? "Verified" : "Unverified"}
-                      </span>
-                    </div>
-                    <div className="rounded-full bg-[#d8c7a8]/10 px-4 py-2">
-                      <span className="text-sm font-medium">Score: </span>
-                      <span className="text-sm font-bold text-blue-400">{data.verification_score}/100</span>
-                    </div>
-                    <button
-                      onClick={handleDownloadPdf}
-                      disabled={pdfLoading}
-                      className="flex items-center gap-2 rounded-full bg-blue-500/10 px-4 py-2 text-blue-400 transition-all duration-300 hover:bg-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {pdfLoading ? (
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                          className="h-4 w-4 border-2 border-blue-400/30 border-t-blue-400 rounded-full"
-                        />
-                      ) : (
-                        <Download size={16} />
-                      )}
-                      <span className="text-sm font-medium">
-                        {pdfLoading ? "Generating..." : "Download PDF"}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </header>
-
-            <main className="mx-auto max-w-7xl px-6 py-10 md:py-14">
-              <div className="grid grid-cols-1 gap-8 xl:grid-cols-[260px_1fr]">
-                <aside className="xl:sticky xl:top-28 h-fit rounded-2xl border border-[#d8c7a8]/15 bg-[#17151c]/80 p-5">
-                  <p className="mb-4 text-xs uppercase tracking-[0.25em] text-[#bfae8f]">Contents</p>
-                  <nav className="space-y-2">
-                    {chapters.map((chapter) => (
-                      <a
-                        key={chapter.id}
-                        href={`#${chapter.id}`}
-                        className="block rounded-lg px-3 py-2 text-sm text-[#d9cfbe] transition hover:bg-[#d8c7a8]/10 hover:text-white"
+    <div className="bg-[#050508] min-h-screen font-sans text-white">
+      {/* HERO SECTION */}
+      <div className="relative min-h-screen bg-black text-white overflow-hidden flex flex-col">
+        <video
+          className="absolute inset-0 w-full h-full object-cover"
+          autoPlay
+          loop
+          muted
+          playsInline
+          src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260403_050628_c4e32401-fab4-4a27-b7a8-6e9291cd5959.mp4"
+        />
+        <div className="absolute inset-0 bg-black/40"></div>
+        <div className="relative z-10 flex flex-col min-h-screen w-full">
+          {/* Mega Navbar */}
+          <div className="w-full px-6 md:px-12 lg:px-16 pt-6">
+            <nav className="liquid-glass border border-white/10 rounded-2xl px-6 py-4 flex items-center justify-between relative bg-black/20 backdrop-blur-md">
+              <div className="text-2xl font-bold tracking-tight bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">Student Hub</div>
+              
+              <div className="hidden md:flex items-center gap-8 text-sm font-medium">
+                <div 
+                  className="relative group"
+                  onMouseEnter={() => setActiveMenu('jobs')}
+                  onMouseLeave={() => setActiveMenu(null)}
+                >
+                  <button className="flex items-center gap-1 hover:text-[#9fff00] transition-colors py-2 text-white">
+                    Jobs <ChevronDown size={14} className={`transition-transform ${activeMenu === 'jobs' ? 'rotate-180' : ''}`} />
+                  </button>
+                  {/* Dropdown */}
+                  <AnimatePresence>
+                    {activeMenu === 'jobs' && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute top-full left-0 mt-2 w-64 bg-[#0A0A0A] border border-white/10 rounded-xl p-4 shadow-2xl backdrop-blur-xl"
                       >
-                        <span className="mr-2 text-xs text-[#bfae8f]">{chapter.label}</span>
-                        {chapter.title}
-                      </a>
-                    ))}
-                  </nav>
+                        <div className="space-y-2">
+                          <p className="text-xs text-white/40 uppercase tracking-wider font-semibold mb-3">Popular Categories</p>
+                          <Link href="#explore-section" className="block text-white/80 hover:text-[#9fff00] hover:translate-x-1 transition-all py-1.5">IT Jobs</Link>
+                          <Link href="#explore-section" className="block text-white/80 hover:text-[#9fff00] hover:translate-x-1 transition-all py-1.5">Sales Jobs</Link>
+                          <Link href="#explore-section" className="block text-white/80 hover:text-[#9fff00] hover:translate-x-1 transition-all py-1.5">Marketing Jobs</Link>
+                          <Link href="#explore-section" className="block text-white/80 hover:text-[#9fff00] hover:translate-x-1 transition-all py-1.5">Data Science Jobs</Link>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
 
-                  <div className="mt-6 space-y-3 border-t border-[#d8c7a8]/10 pt-5 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#bfae8f]">Verification</span>
-                      <span className={data.is_verified ? "text-emerald-400" : "text-amber-400"}>
-                        {data.is_verified ? "Verified" : "Review Needed"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#bfae8f]">Score</span>
-                      <span className="font-semibold">{data.verification_score}/100</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#bfae8f]">Revenue Points</span>
-                      <span className="font-semibold">{data.turnover_data.length}</span>
+                <div 
+                  className="relative group"
+                  onMouseEnter={() => setActiveMenu('companies')}
+                  onMouseLeave={() => setActiveMenu(null)}
+                >
+                  <button className="flex items-center gap-1 hover:text-[#9fff00] transition-colors py-2 text-white">
+                    Companies <ChevronDown size={14} className={`transition-transform ${activeMenu === 'companies' ? 'rotate-180' : ''}`} />
+                  </button>
+                  <AnimatePresence>
+                    {activeMenu === 'companies' && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute top-full left-0 mt-2 w-64 bg-[#0A0A0A] border border-white/10 rounded-xl p-4 shadow-2xl backdrop-blur-xl"
+                      >
+                        <div className="space-y-2">
+                          <p className="text-xs text-white/40 uppercase tracking-wider font-semibold mb-3">Explore Collections</p>
+                          <Link href="#explore-section" className="block text-white/80 hover:text-[#9fff00] hover:translate-x-1 transition-all py-1.5">Top MNCs</Link>
+                          <Link href="#explore-section" className="block text-white/80 hover:text-[#9fff00] hover:translate-x-1 transition-all py-1.5">Startups</Link>
+                          <Link href="#explore-section" className="block text-white/80 hover:text-[#9fff00] hover:translate-x-1 transition-all py-1.5">Product Based</Link>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+                
+                <Link href="/feedback" className="hover:text-[#9fff00] transition-colors py-2 text-white">Feedback</Link>
+                <Link href="/community" className="hover:text-[#9fff00] transition-colors py-2 text-white">Community</Link>
+              </div>
+
+              <div className="flex gap-4">
+                <Link href="/chat" className="bg-[#9fff00] text-black px-6 py-2.5 rounded-xl font-bold hover:bg-[#8cee00] transition-all transform hover:scale-105 text-sm shadow-[0_0_20px_rgba(159,255,0,0.3)]">
+                  Start Chat
+                </Link>
+              </div>
+            </nav>
+          </div>
+
+          {/* Hero Content */}
+          <div className="px-6 md:px-12 lg:px-16 flex-1 flex flex-col justify-center items-center pb-12 lg:pb-16 w-full text-center mt-[-5vh]">
+            <AnimatedHeading
+              text={"Find your dream job now"}
+              className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6 text-white tracking-tight"
+            />
+            <FadeIn delay={600} duration={800}>
+              <p className="text-lg md:text-xl text-white/80 mb-12 font-medium max-w-2xl mx-auto">
+                Explore thousands of verified opportunities, driven by AI.
+              </p>
+            </FadeIn>
+            
+            {/* Massive Pill Search Bar */}
+            <FadeIn delay={1000} duration={800} className="w-full max-w-4xl mx-auto">
+              <div className="bg-white/[0.08] backdrop-blur-xl border border-white/20 p-2 rounded-3xl md:rounded-full flex flex-col md:flex-row shadow-2xl items-center ring-1 ring-white/10">
+                <div className="flex-1 flex items-center px-6 border-b md:border-b-0 md:border-r border-white/20 w-full md:w-auto h-16">
+                  <Compass className="text-white/60 mr-3 hidden sm:block" size={22} />
+                  <Input 
+                    placeholder="Enter skills / designations / companies" 
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && fetchOpportunities()}
+                    className="bg-transparent border-0 focus-visible:ring-0 text-white placeholder:text-white/60 text-base lg:text-lg h-full px-0 shadow-none w-full"
+                  />
+                </div>
+                <div className="flex-1 flex items-center px-6 w-full md:w-auto h-16">
+                  <MapPin className="text-white/60 mr-3 hidden sm:block" size={22} />
+                  <Input 
+                    placeholder="Enter location" 
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && fetchOpportunities()}
+                    className="bg-transparent border-0 focus-visible:ring-0 text-white placeholder:text-white/60 text-base lg:text-lg h-full px-0 shadow-none w-full"
+                  />
+                </div>
+                <Button 
+                  onClick={() => {
+                    fetchOpportunities();
+                    document.getElementById('explore-section')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="bg-[#9fff00] hover:bg-[#8cee00] text-black rounded-2xl md:rounded-full px-12 h-14 font-bold text-lg w-full md:w-auto m-1 transition-all shadow-[0_0_20px_rgba(159,255,0,0.2)]">
+                  Search
+                </Button>
+              </div>
+            </FadeIn>
+          </div>
+        </div>
+      </div>
+
+      {/* EXPLORE REDESIGN SECTION */}
+      <div id="explore-section" className="py-24 w-full max-w-7xl mx-auto px-6 space-y-24">
+        
+        {/* Quick Filters */}
+        <section>
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            {QUICK_FILTERS.map((filter, i) => (
+              <button 
+                key={i}
+                onClick={() => fetchOpportunities(filter.label)}
+                className="flex items-center gap-2.5 px-6 py-3.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/30 transition-all font-medium text-white/80 hover:text-white"
+              >
+                {filter.icon}
+                {filter.label} <ChevronDown size={14} className="ml-1 opacity-40" />
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Top Companies Hiring Now (Carousel) */}
+        <section>
+          <div className="flex items-center justify-center mb-10">
+            <h2 className="text-3xl font-bold tracking-tight text-white">Top companies hiring now</h2>
+          </div>
+          <div className="overflow-hidden" ref={topEmblaRef}>
+            <div className="flex -ml-4">
+              {topCompanies.length > 0 ? topCompanies.map((tc, idx) => (
+                <div key={idx} className="flex-[0_0_80%] sm:flex-[0_0_40%] md:flex-[0_0_25%] pl-4 min-w-0">
+                  <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-6 h-full hover:border-[#9fff00]/50 transition-colors group cursor-pointer shadow-lg" onClick={() => fetchOpportunities(tc.category)}>
+                    <h3 className="text-xl font-bold mb-1 group-hover:text-[#9fff00] transition-colors">{tc.category} <ArrowRight size={16} className="inline opacity-0 -ml-2 group-hover:opacity-100 group-hover:ml-1 transition-all" /></h3>
+                    <p className="text-sm text-white/50 mb-6">{tc.count} are actively hiring</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {tc.companies.slice(0,4).map(c => (
+                        <div key={c} className="w-10 h-10 rounded-lg bg-[#111] border border-white/10 flex items-center justify-center text-xs font-bold text-white/80" title={c}>
+                          {c[0]}
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </aside>
-
-                <div className="space-y-8">
-                  <motion.section
-                    id="chapter-history"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1, duration: 0.55 }}
-                    className="rounded-2xl border border-[#d8c7a8]/15 bg-[#17151c]/80 p-6 md:p-8"
-                  >
-                    <div className="mb-6 flex items-start justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <div className="rounded-xl bg-[#d8c7a8]/10 p-2">
-                          <BookOpenText className="h-5 w-5 text-[#e4d6bd]" />
-                        </div>
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.2em] text-[#bfae8f]">Chapter I</p>
-                          <h2 className="font-serif text-2xl md:text-3xl">Company History</h2>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-5 text-[15px] leading-8 text-[#e5dccf]">
-                      {historyParagraphs(data.company_history).map((paragraph, idx) => (
-                        <p key={`${paragraph.slice(0, 20)}-${idx}`}>{paragraph}</p>
-                      ))}
-                    </div>
-                  </motion.section>
-
-                  <motion.section
-                    id="chapter-company-info"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.15, duration: 0.55 }}
-                  >
-                    <CompanyInformationChapter
-                      companyName={data.company_name}
-                      founders={data.founder_profiles}
-                      headquarters={data.headquarters_info}
-                      operations={data.global_operations}
-                      citations={data.citation_sources}
-                      chapterLastUpdated={data.chapter_last_updated}
-                    />
-                  </motion.section>
-
-                  <motion.section
-                    id="chapter-analysis"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2, duration: 0.55 }}
-                    className="rounded-2xl border border-[#d8c7a8]/15 bg-[#17151c]/80 p-6 md:p-8"
-                  >
-                    <div className="mb-6 flex items-center gap-3">
-                      <div className="rounded-xl bg-[#d8c7a8]/10 p-2">
-                        <Building2 className="h-5 w-5 text-[#e4d6bd]" />
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-[#bfae8f]">Chapter III</p>
-                        <h2 className="font-serif text-2xl md:text-3xl">Business Analysis</h2>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <div className="rounded-xl border border-[#d8c7a8]/10 bg-[#111018] p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-[#bfae8f]">Trust Index</p>
-                        <p className="mt-2 text-3xl font-semibold text-white">{data.verification_score}</p>
-                        <p className="mt-2 text-sm text-[#d9cfbe]">
-                          {data.is_verified
-                            ? "Strong confidence based on public and financial signals."
-                            : "Moderate confidence. Consider deeper diligence before decisions."}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-[#d8c7a8]/10 bg-[#111018] p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-[#bfae8f]">Revenue Trend</p>
-                        <p className="mt-2 text-3xl font-semibold text-white">
-                          {getRevenueDelta(data.turnover_data) !== null
-                            ? `${getRevenueDelta(data.turnover_data)!.toFixed(1)}%`
-                            : "N/A"}
-                        </p>
-                        <p className="mt-2 text-sm text-[#d9cfbe]">
-                          Change across available fiscal records.
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-[#d8c7a8]/10 bg-[#111018] p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-[#bfae8f]">Coverage</p>
-                        <p className="mt-2 text-3xl font-semibold text-white">{data.turnover_data.length}</p>
-                        <p className="mt-2 text-sm text-[#d9cfbe]">
-                          Historical revenue observations in this profile.
-                        </p>
-                      </div>
-                    </div>
-                  </motion.section>
-
-                  <motion.section
-                    id="chapter-financials"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3, duration: 0.55 }}
-                    className="rounded-2xl border border-[#d8c7a8]/15 bg-[#17151c]/80 p-6 md:p-8"
-                  >
-                    <div className="mb-6 flex items-center gap-3">
-                      <div className="rounded-xl bg-[#d8c7a8]/10 p-2">
-                        <FileBarChart className="h-5 w-5 text-[#e4d6bd]" />
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-[#bfae8f]">Chapter IV</p>
-                        <h2 className="font-serif text-2xl md:text-3xl">Financial Performance</h2>
-                      </div>
-                    </div>
-
-                    <div className="mb-6 rounded-xl border border-[#d8c7a8]/10 bg-[#111018] p-4">
-                      <div className="mb-4 flex items-center gap-2">
-                        <LineChart className="h-4 w-4 text-[#bfae8f]" />
-                        <p className="text-sm text-[#d9cfbe]">Revenue Visualization</p>
-                      </div>
-                      <div className="h-[320px]">
-                        <TurnoverChart data={data.turnover_data} />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      {[...data.turnover_data]
-                        .sort((a, b) => Number(b.year) - Number(a.year))
-                        .slice(0, 4)
-                        .map((item) => (
-                          <div key={item.year} className="rounded-xl border border-[#d8c7a8]/10 bg-[#111018] p-4">
-                            <div className="mb-2 flex items-center justify-between">
-                              <p className="text-sm text-[#bfae8f]">Fiscal {item.year}</p>
-                              <TrendingUp className="h-4 w-4 text-[#e4d6bd]" />
-                            </div>
-                            <p className="text-xl font-semibold text-white">{toCompactCurrency(item.revenue)}</p>
-                          </div>
-                        ))}
-                    </div>
-                  </motion.section>
-
-                  <motion.section
-                    id="chapter-strategy"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4, duration: 0.55 }}
-                    className="rounded-2xl border border-[#d8c7a8]/15 bg-[#17151c]/80 p-6 md:p-8"
-                  >
-                    <div className="mb-6 flex items-center gap-3">
-                      <div className="rounded-xl bg-[#d8c7a8]/10 p-2">
-                        <Lightbulb className="h-5 w-5 text-[#e4d6bd]" />
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-[#bfae8f]">Chapter V</p>
-                        <h2 className="font-serif text-2xl md:text-3xl">Strategic Insights</h2>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      {strategicInsights(data).map((insight, index) => (
-                        <div key={index} className="rounded-xl border border-[#d8c7a8]/10 bg-[#111018] p-4">
-                          <div className="mb-2 flex items-center gap-2">
-                            <Sparkles className="h-4 w-4 text-[#e4d6bd]" />
-                            <p className="text-xs uppercase tracking-[0.2em] text-[#bfae8f]">Insight {index + 1}</p>
-                          </div>
-                          <p className="text-[15px] leading-7 text-[#e5dccf]">{insight}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.section>
-
-                  <motion.section
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.5, duration: 0.55 }}
-                    className="rounded-2xl border border-[#d8c7a8]/15 bg-[#17151c]/80 p-6 md:p-8"
-                  >
-                    <div className="mb-4 flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-[#bfae8f]" />
-                      <p className="text-xs uppercase tracking-[0.2em] text-[#bfae8f]">Recent Searches</p>
-                    </div>
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      {searchHistory.map((item) => (
-                        <button
-                          key={item.id}
-                          onClick={() => handleSearch(item.company)}
-                          className="flex items-center justify-between rounded-xl border border-[#d8c7a8]/10 bg-[#111018] px-4 py-3 text-left transition hover:bg-[#1a1820]"
-                        >
-                          <span className="text-sm text-[#e5dccf]">{item.company}</span>
-                          <span className="text-xs text-[#bfae8f]">{item.score}%</span>
-                        </button>
-                      ))}
-                    </div>
-                  </motion.section>
                 </div>
+              )) : (
+                [1,2,3,4].map(i => (
+                  <div key={i} className="flex-[0_0_25%] pl-4 min-w-0"><div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6 h-36 animate-pulse"></div></div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Featured Companies (Carousel) */}
+        <section>
+          <div className="flex items-center justify-center mb-10">
+            <h2 className="text-3xl font-bold tracking-tight text-white">Featured companies actively hiring</h2>
+          </div>
+          <div className="overflow-hidden pb-8" ref={featEmblaRef}>
+            <div className="flex -ml-6">
+              {featuredCompanies.length > 0 ? featuredCompanies.map((fc, idx) => (
+                <div key={idx} className="flex-[0_0_90%] sm:flex-[0_0_45%] lg:flex-[0_0_30%] pl-6 min-w-0">
+                  <Card className="bg-[#0A0A0A] border-white/10 rounded-2xl hover:bg-[#0f0f0f] hover:border-white/20 transition-all cursor-pointer h-full group shadow-xl" onClick={() => fetchOpportunities(fc.name)}>
+                    <CardContent className="p-8">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-white/10 to-transparent mb-6 flex items-center justify-center text-2xl font-bold shadow-inner border border-white/10 text-[#9fff00]">
+                        {fc.name.substring(0, 2).toUpperCase()}
+                      </div>
+                      <h3 className="text-2xl font-bold text-white mb-2">{fc.name}</h3>
+                      <div className="flex items-center gap-2 text-sm mb-5 bg-white/5 inline-flex px-3 py-1 rounded-full">
+                        <Star className="text-yellow-400 fill-yellow-400 w-3.5 h-3.5" />
+                        <span className="font-bold">{fc.rating}</span>
+                        <span className="text-white/30">|</span>
+                        <span className="text-white/60">{fc.reviews_count}</span>
+                      </div>
+                      <p className="text-white/60 mb-8 line-clamp-2 h-10 leading-relaxed text-sm">{fc.description}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {fc.tags.map(t => (
+                          <Badge key={t} variant="secondary" className="bg-[#111] hover:bg-[#222] text-white/70 font-medium border border-white/5 px-3 py-1">
+                            {t}
+                          </Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )) : (
+                [1,2,3].map(i => (
+                  <div key={i} className="flex-[0_0_30%] pl-6 min-w-0"><div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6 h-72 animate-pulse"></div></div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Live Search Results (Job List) */}
+        <section>
+          <div className="flex items-center justify-between mb-10">
+            <h2 className="text-3xl font-bold tracking-tight text-white">Live Opportunities</h2>
+            <Badge variant="outline" className="border-[#9fff00] text-[#9fff00] bg-[#9fff00]/10 px-3 py-1">
+              {opportunities.length} Results
+            </Badge>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {loading ? (
+              [1,2,3,4,5,6].map(i => <div key={i} className="h-44 bg-[#0A0A0A] rounded-2xl border border-white/5 animate-pulse"></div>)
+            ) : opportunities.length === 0 ? (
+              <div className="col-span-full py-20 text-center text-white/50 bg-[#0A0A0A] rounded-2xl border border-white/10">
+                <Compass className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                <p>No opportunities found. Adjust your search.</p>
               </div>
-            </main>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+            ) : (
+              opportunities.map((job, idx) => (
+                <Card key={idx} className="bg-[#0A0A0A] border-white/10 rounded-2xl hover:bg-[#111] transition-all group overflow-hidden shadow-lg hover:shadow-xl cursor-pointer" onClick={() => setSelectedJob({ ...job, company: job.company_name })}>
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#9fff00]/0 via-[#9fff00]/50 to-[#9fff00]/0 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                  <CardContent className="p-6">
+                    <h3 className="text-xl font-bold text-white mb-1 line-clamp-1 group-hover:text-[#9fff00] transition-colors">{job.title}</h3>
+                    <p className="text-white/60 mb-5 font-medium">{job.company_name}</p>
+                    
+                    <div className="flex items-center gap-4 text-sm text-white/50 mb-6 bg-white/5 inline-flex px-3 py-1.5 rounded-lg border border-white/5">
+                      <div className="flex items-center gap-1.5"><MapPin size={14}/> {job.location}</div>
+                      <div className="w-[1px] h-3 bg-white/20"></div>
+                      <div className="flex items-center gap-1.5"><Briefcase size={14}/> {job.type}</div>
+                    </div>
+                    
+                    <div className="flex justify-between items-center border-t border-white/10 pt-5">
+                      <Badge variant="outline" className="bg-transparent border-white/20 text-white/60">
+                        Trust: <span className="text-white ml-1 font-bold">{job.trust_score}</span>
+                      </Badge>
+                      <a href={job.apply_url || "#"} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-white hover:text-[#9fff00] flex items-center gap-1.5 group/link">
+                        Apply <ExternalLink size={14} className="group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5 transition-transform" />
+                      </a>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </section>
+
+      </div>
+
+      <OnboardingModal />
+      <JobDetailsDrawer job={selectedJob} isOpen={!!selectedJob} onClose={() => setSelectedJob(null)} />
     </div>
   );
-}
-
-export default function DashboardPage() {
-  return <DashboardContent />;
 }
