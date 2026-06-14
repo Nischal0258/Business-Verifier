@@ -267,7 +267,7 @@ async def verify_company(company_name: str, db: AsyncSession = Depends(get_db)):
         if fuzzy_results:
             best = fuzzy_results[0]
             logger.info(f"FTS5 fuzzy match: '{normalized}' → '{best['company_name']}'")
-            cached = await _get_cached_report(db, best["company_name"])
+            cached = await _get_cached_report(db, best['company_name'])
             if cached and not await _is_cache_stale(cached):
                 data = _company_report_to_dict(cached)
                 _hot_cache[normalized] = data
@@ -275,7 +275,7 @@ async def verify_company(company_name: str, db: AsyncSession = Depends(get_db)):
                     success=True,
                     data=CompanyVerificationData(**data),
                     error=None,
-                    metadata={"cached": True, "cache_layer": "fts5_fuzzy", "matched": best["company_name"]}
+                    metadata={"cached": True, "cache_layer": "fts5_fuzzy", "matched": best['company_name']}
                 )
 
         # L3: Live fetch
@@ -346,7 +346,7 @@ async def verify_company_pdf(company_name: str, db: AsyncSession = Depends(get_d
             iter([pdf_bytes]),
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f"attachment; filename=\"{company_name.replace(' ', '_')}_report.pdf\""
+                "Content-Disposition": f'attachment; filename="{company_name.replace(" ", "_")}_report.pdf"'
             }
         )
 
