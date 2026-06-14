@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "InternIQ — Discover Internships Beyond MNCs",
-  description: "AI-powered internship discovery platform. Search any company — from Google to your local startup. Get trust scores, reviews, and opportunities in one place.",
+  title: "Velorah — Where Dreams Rise",
+  description: "Designing tools for deep thinkers, bold creators, and quiet rebels.",
 };
 
 export default function RootLayout({
@@ -14,10 +13,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">
-        <Providers>
-          {children}
-        </Providers>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="antialiased font-body">
+        {children}
       </body>
     </html>
   );
