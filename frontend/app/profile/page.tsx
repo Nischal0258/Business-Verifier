@@ -3,7 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Star, Heart, Plus, Trash2, User, Building2, ShieldCheck } from "lucide-react";
+import { Heart, Plus, Trash2, User, Building2 } from "lucide-react";
+import { Rating } from "@/components/ui/Rating";
+import ReviewCard from "@/components/cards/ReviewCard";
 import { getFavorites, addFavorite, removeFavorite, getCompanyReviews, submitReview } from "@/lib/api";
 import type { FavoriteCompanyResponse, InternalStudentReviewResponse, InternalStudentReviewCreate } from "@/types/student";
 
@@ -171,18 +173,11 @@ export default function ProfilePage() {
 
                   <div className="flex items-center gap-3">
                     <span className="text-white/60">Rating:</span>
-                    {[1,2,3,4,5].map((star) => (
-                      <button
-                        key={star}
-                        type="button"
-                        onClick={() => setNewRating(star)}
-                        className="p-1"
-                      >
-                        <Star
-                          className={`w-6 h-6 ${star <= newRating ? "text-[#64CEFB] fill-[#64CEFB]" : "text-white/30"}`}
-                        />
-                      </button>
-                    ))}
+                    <Rating
+                      value={newRating}
+                      onRate={setNewRating}
+                      color="text-[#64CEFB]"
+                    />
                   </div>
 
                   <label className="flex items-center gap-2 text-sm text-white/60">
@@ -228,32 +223,7 @@ export default function ProfilePage() {
                 ) : (
                   <div className="flex flex-col gap-4">
                     {reviews.map((review) => (
-                      <div key={review.id} className="p-4 rounded-xl border border-white/10 bg-white/5">
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="font-semibold text-white flex items-center gap-2">
-                            {review.company_name}
-                            {review.is_internship && (
-                              <span className="text-xs px-2 py-1 rounded bg-[#64CEFB]/10 text-[#64CEFB] border border-[#64CEFB]/20">
-                                Internship
-                              </span>
-                            )}
-                          </h3>
-                          <div className="flex items-center gap-1">
-                            {[...Array(5)].map((_, idx) => (
-                              <Star
-                                key={idx}
-                                className={`w-4 h-4 ${idx < review.rating ? "text-[#64CEFB] fill-[#64CEFB]" : "text-white/30"}`}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                        <p className="text-sm text-white/70 leading-relaxed">
-                          {review.review_text}
-                        </p>
-                        <p className="text-xs text-white/40 mt-3">
-                          Posted on {new Date(review.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
+                      <ReviewCard key={review.id} review={review} />
                     ))}
                   </div>
                 )}
