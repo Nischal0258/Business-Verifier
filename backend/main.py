@@ -25,6 +25,17 @@ from data_engine.models import CompanyReport
 from utils import normalize_company_name
 from fts_search import init_fts5, fuzzy_search, update_fts5_entry
 from tasks import schedule_prefetch_loop
+from routers.students import router as students_router
+from routers.companies import router as companies_router
+
+# Optional import for CrewAI
+try:
+    from agents.crew import build_student_report_crew, build_comparator_crew
+    from schemas import CompanyStudentReport
+    from data_engine.student_score import calculate_student_trust_score
+    HAS_CREWAI = True
+except ImportError:
+    HAS_CREWAI = False
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,11 +57,11 @@ except Exception as e:
 
 async def _validate_gemini_key():
     """Validate Gemini API key on startup."""
-    import google.generativeai as genai
     if not settings.gemini_api_key:
         logger.warning("GEMINI_API_KEY not set — Gemini features will be disabled")
         return
     try:
+        import google.generativeai as genai
         genai.configure(api_key=settings.gemini_api_key)
         # Quick check by listing models
         genai.list_models()
@@ -62,7 +73,7 @@ async def _validate_gemini_key():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
-    logger.info("Starting up Business Verification API...")
+    logger.info("Starting up Business Verification & Analytics API...")
 
     try:
         asyncio.create_task(_validate_gemini_key())
@@ -111,6 +122,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(students_router)
+app.include_router(companies_router)
 
 # In-memory LRU cache — 500 entries, 1 hour TTL
 _hot_cache: TTLCache = TTLCache(maxsize=500, ttl=3600)
@@ -361,111 +376,108 @@ async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
 
-from agents.crew import build_student_report_crew, build_comparator_crew
-from schemas import CompanyStudentReport
-from data_engine.student_score import calculate_student_trust_score
-
-@app.get("/api/v1/student/company/{company_name}", response_model=ApiResponse[CompanyStudentReport])
-async def get_student_company_report(company_name: str, db: AsyncSession = Depends(get_db)):
-    """
-    Triggers CrewAI to research a company and return a student-first report.
-    This kicks off the hierarchical agent workflow asynchronously.
-    """
-    if not settings.gemini_api_key:
-        return ApiResponse(
-            success=False,
-            data=None,
-            error="Gemini API key is required. Please configure GEMINI_API_KEY.",
-            metadata=None
-        )
-    
-    try:
-        crew = build_student_report_crew(company_name)
+if HAS_CREWAI:
+    @app.get("/api/v1/student/company/{company_name}", response_model=ApiResponse[CompanyStudentReport])
+    async def get_student_company_report(company_name: str, db: AsyncSession = Depends(get_db)):
+        """
+        Triggers CrewAI to research a company and return a student-first report.
+        This kicks off the hierarchical agent workflow asynchronously.
+        """
+        if not settings.gemini_api_key:
+            return ApiResponse(
+                success=False,
+                data=None,
+                error="Gemini API key is required. Please configure GEMINI_API_KEY.",
+                metadata=None
+            )
         
-        # Run CrewAI synchronously in a separate thread so we don't block FastAPI's event loop
-        result = await asyncio.to_thread(crew.kickoff)
-        
-        raw_output = str(result)
-        
-        # Parse agent outputs into structured data
-        # The crew returns results from 5 sequential tasks
-        report_data = {
-            "company_name": company_name,
-            "description": raw_output[:500] if raw_output else "",
-            "company_history": raw_output[:800] if raw_output else "",
-            "is_verified": True,
-            "verification_score": 0,
-            "social_media": {},
-            "opportunities": [],
-            "total_opportunities": 0,
-            "reviews": {},
-            "growth": {"trend": "unknown", "description": ""},
-            "agent_execution_log": f"CrewAI executed {len(crew.tasks)} tasks with {len(crew.agents)} agents."
-        }
-        
-        # Calculate real trust score using the algorithm
-        trust_score = calculate_student_trust_score(
-            company_data=report_data,
-            opportunities=report_data.get("opportunities", []),
-            social_media=report_data.get("social_media", {}),
-            reviews=report_data.get("reviews", {}),
-        )
-        report_data["student_trust_score"] = trust_score
-        report_data["verification_score"] = trust_score["total_score"]
-        
-        return ApiResponse(
-            success=True,
-            data=CompanyStudentReport(**report_data),
-            error=None,
-            metadata={"source": "crew_ai", "agents_used": len(crew.agents), "tasks_completed": len(crew.tasks)}
-        )
-    except Exception as e:
-        logger.error(f"Error running CrewAI for {company_name}: {e}")
-        traceback.print_exc()
-        return ApiResponse(
-            success=False,
-            data=None,
-            error=f"Agent workflow failed: {str(e)}",
-            metadata=None
-        )
+        try:
+            crew = build_student_report_crew(company_name)
+            
+            # Run CrewAI synchronously in a separate thread so we don't block FastAPI's event loop
+            result = await asyncio.to_thread(crew.kickoff)
+            
+            raw_output = str(result)
+            
+            # Parse agent outputs into structured data
+            # The crew returns results from 5 sequential tasks
+            report_data = {
+                "company_name": company_name,
+                "description": raw_output[:500] if raw_output else "",
+                "company_history": raw_output[:800] if raw_output else "",
+                "is_verified": True,
+                "verification_score": 0,
+                "social_media": {},
+                "opportunities": [],
+                "total_opportunities": 0,
+                "reviews": {},
+                "growth": {"trend": "unknown", "description": ""},
+                "agent_execution_log": f"CrewAI executed {len(crew.tasks)} tasks with {len(crew.agents)} agents."
+            }
+            
+            # Calculate real trust score using the algorithm
+            trust_score = calculate_student_trust_score(
+                company_data=report_data,
+                opportunities=report_data.get("opportunities", []),
+                social_media=report_data.get("social_media", {}),
+                reviews=report_data.get("reviews", {}),
+            )
+            report_data["student_trust_score"] = trust_score
+            report_data["verification_score"] = trust_score["total_score"]
+            
+            return ApiResponse(
+                success=True,
+                data=CompanyStudentReport(**report_data),
+                error=None,
+                metadata={"source": "crew_ai", "agents_used": len(crew.agents), "tasks_completed": len(crew.tasks)}
+            )
+        except Exception as e:
+            logger.error(f"Error running CrewAI for {company_name}: {e}")
+            traceback.print_exc()
+            return ApiResponse(
+                success=False,
+                data=None,
+                error=f"Agent workflow failed: {str(e)}",
+                metadata=None
+            )
 
 
-@app.get("/api/v1/student/compare")
-async def compare_companies(companies: str):
-    """
-    Compare multiple companies side-by-side.
-    Pass comma-separated company names in query, e.g., ?companies=Google,Microsoft,Amazon
-    """
-    company_list = [c.strip() for c in companies.split(",") if c.strip()]
-    if len(company_list) < 2:
-        return ApiResponse(
-            success=False,
-            data=None,
-            error="Please provide at least 2 companies to compare.",
-            metadata=None
-        )
-        
-    try:
-        crew = build_comparator_crew(company_list)
-        result = await asyncio.to_thread(crew.kickoff)
-        
-        return ApiResponse(
-            success=True,
-            data={
-                "comparison": f"Comparing {len(company_list)} companies: {', '.join(company_list)}",
-                "result": str(result)
-            },
-            error=None,
-            metadata={"companies_compared": company_list, "source": "crew_ai"}
-        )
-    except Exception as e:
-        logger.error(f"Error running CrewAI compare for {company_list}: {e}")
-        return ApiResponse(
-            success=False,
-            data=None,
-            error=f"Comparison failed: {str(e)}",
-            metadata=None
-        )
+    @app.get("/api/v1/student/compare")
+    async def compare_companies(companies: str):
+        """
+        Compare multiple companies side-by-side.
+        Pass comma-separated company names in query, e.g., ?companies=Google,Microsoft,Amazon
+        """
+        company_list = [c.strip() for c in companies.split(",") if c.strip()]
+        if len(company_list) < 2:
+            return ApiResponse(
+                success=False,
+                data=None,
+                error="Please provide at least 2 companies to compare.",
+                metadata=None
+            )
+            
+        try:
+            crew = build_comparator_crew(company_list)
+            result = await asyncio.to_thread(crew.kickoff)
+            
+            return ApiResponse(
+                success=True,
+                data={
+                    "comparison": f"Comparing {len(company_list)} companies: {', '.join(company_list)}",
+                    "result": str(result)
+                },
+                error=None,
+                metadata={"companies_compared": company_list, "source": "crew_ai"}
+            )
+        except Exception as e:
+            logger.error(f"Error running CrewAI compare for {company_list}: {e}")
+            return ApiResponse(
+                success=False,
+                data=None,
+                error=f"Comparison failed: {str(e)}",
+                metadata=None
+            )
 
 
 if __name__ == "__main__":

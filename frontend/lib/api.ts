@@ -125,6 +125,9 @@ function categorizeError(error: unknown): ErrorCode {
   return ErrorCode.UNKNOWN_ERROR;
 }
 
+// Alias for backward compatibility
+const classifyError = categorizeError;
+
 function getUserFriendlyMessage(errorCode: ErrorCode, error?: AxiosError): string {
   switch (errorCode) {
     case ErrorCode.NETWORK_ERROR:
@@ -448,6 +451,325 @@ export async function compareCompanies(
       return response.data.data;
     }
     throw new Error(response.data.error || "Comparison failed");
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: false,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   InternIQ v3 — Phase 3/4 API Functions
+   ═══════════════════════════════════════════════════════════════════ */
+
+import type {
+  OpportunityItem,
+  SocialMediaLinks,
+  CompanyReviewSummary,
+  FavoriteCompanyCreate,
+  FavoriteCompanyResponse,
+  InternalStudentReviewCreate,
+  InternalStudentReviewResponse,
+} from "@/types/student";
+
+// --- Students API Functions ---
+
+/**
+ * Fetch internship/job opportunities with filters
+ */
+export async function fetchOpportunities(
+  params?: {
+    location?: string;
+    job_type?: string;
+    company_name?: string;
+    search?: string;
+    limit?: number;
+  }
+): Promise<OpportunityItem[]> {
+  const apiBase = getApiBaseUrl();
+  try {
+    const response = await apiClient.get<StudentApiResponse<OpportunityItem[]>>(
+      `${apiBase}/api/v1/students/opportunities`,
+      { params }
+    );
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || "Failed to fetch opportunities");
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: errorCode === ErrorCode.NETWORK_ERROR || errorCode === ErrorCode.TIMEOUT_ERROR,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Add a company to favorites
+ */
+export async function addFavorite(
+  favorite: FavoriteCompanyCreate
+): Promise<FavoriteCompanyResponse> {
+  const apiBase = getApiBaseUrl();
+  try {
+    const response = await apiClient.post<StudentApiResponse<FavoriteCompanyResponse>>(
+      `${apiBase}/api/v1/students/favorites`,
+      favorite
+    );
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || "Failed to add favorite");
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: false,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Remove a company from favorites
+ */
+export async function removeFavorite(companyName: string): Promise<void> {
+  const apiBase = getApiBaseUrl();
+  const encoded = encodeURIComponent(companyName.trim());
+  try {
+    const response = await apiClient.delete<StudentApiResponse<unknown>>(
+      `${apiBase}/api/v1/students/favorites/${encoded}`
+    );
+    if (!response.data.success) {
+      throw new Error(response.data.error || "Failed to remove favorite");
+    }
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: false,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Get user's favorite companies
+ */
+export async function getFavorites(): Promise<FavoriteCompanyResponse[]> {
+  const apiBase = getApiBaseUrl();
+  try {
+    const response = await apiClient.get<StudentApiResponse<FavoriteCompanyResponse[]>>(
+      `${apiBase}/api/v1/students/favorites`
+    );
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || "Failed to fetch favorites");
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: errorCode === ErrorCode.NETWORK_ERROR || errorCode === ErrorCode.TIMEOUT_ERROR,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Submit a student review
+ */
+export async function submitReview(
+  review: InternalStudentReviewCreate
+): Promise<InternalStudentReviewResponse> {
+  const apiBase = getApiBaseUrl();
+  try {
+    const response = await apiClient.post<StudentApiResponse<InternalStudentReviewResponse>>(
+      `${apiBase}/api/v1/students/reviews`,
+      review
+    );
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || "Failed to submit review");
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: false,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Get reviews for a specific company
+ */
+export async function getCompanyReviews(
+  companyName: string,
+  limit?: number
+): Promise<InternalStudentReviewResponse[]> {
+  const apiBase = getApiBaseUrl();
+  const encoded = encodeURIComponent(companyName.trim());
+  try {
+    const response = await apiClient.get<StudentApiResponse<InternalStudentReviewResponse[]>>(
+      `${apiBase}/api/v1/students/reviews/${encoded}`,
+      { params: { limit } }
+    );
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || "Failed to fetch company reviews");
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: errorCode === ErrorCode.NETWORK_ERROR || errorCode === ErrorCode.TIMEOUT_ERROR,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
+
+// --- Companies API Functions ---
+
+/**
+ * Get a company's social media links
+ */
+export async function getCompanySocialMedia(
+  companyName: string
+): Promise<SocialMediaLinks> {
+  const apiBase = getApiBaseUrl();
+  const encoded = encodeURIComponent(companyName.trim());
+  try {
+    const response = await apiClient.get<StudentApiResponse<SocialMediaLinks>>(
+      `${apiBase}/api/v1/companies/${encoded}/social`
+    );
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || "Failed to fetch social media");
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: errorCode === ErrorCode.NETWORK_ERROR || errorCode === ErrorCode.TIMEOUT_ERROR,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Get a company's aggregated review summary
+ */
+export async function getCompanyReviewSummary(
+  companyName: string
+): Promise<CompanyReviewSummary> {
+  const apiBase = getApiBaseUrl();
+  const encoded = encodeURIComponent(companyName.trim());
+  try {
+    const response = await apiClient.get<StudentApiResponse<CompanyReviewSummary>>(
+      `${apiBase}/api/v1/companies/${encoded}/reviews`
+    );
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || "Failed to fetch review summary");
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: errorCode === ErrorCode.NETWORK_ERROR || errorCode === ErrorCode.TIMEOUT_ERROR,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Get opportunities for a specific company
+ */
+export async function getCompanyOpportunities(
+  companyName: string,
+  limit?: number
+): Promise<OpportunityItem[]> {
+  const apiBase = getApiBaseUrl();
+  const encoded = encodeURIComponent(companyName.trim());
+  try {
+    const response = await apiClient.get<StudentApiResponse<OpportunityItem[]>>(
+      `${apiBase}/api/v1/companies/${encoded}/opportunities`,
+      { params: { limit } }
+    );
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || "Failed to fetch company opportunities");
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      const errorCode = classifyError(error);
+      throw {
+        message: getUserFriendlyMessage(errorCode, error),
+        code: errorCode,
+        status: error.response?.status,
+        retryable: errorCode === ErrorCode.NETWORK_ERROR || errorCode === ErrorCode.TIMEOUT_ERROR,
+      } as ApiError;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Refresh company data via CrewAI
+ */
+export async function refreshCompanyData(companyName: string): Promise<void> {
+  const apiBase = getApiBaseUrl();
+  const encoded = encodeURIComponent(companyName.trim());
+  try {
+    const response = await apiClient.post<StudentApiResponse<unknown>>(
+      `${apiBase}/api/v1/companies/${encoded}/refresh`
+    );
+    if (!response.data.success) {
+      throw new Error(response.data.error || "Failed to refresh company data");
+    }
   } catch (error) {
     if (error instanceof AxiosError) {
       const errorCode = classifyError(error);

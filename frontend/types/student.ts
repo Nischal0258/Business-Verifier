@@ -24,6 +24,7 @@ export interface SocialMediaLinks {
 }
 
 export interface OpportunityItem {
+  id?: number | null;
   title: string;
   company_name: string;
   location: string;
@@ -87,4 +88,36 @@ export interface ExploreFilters {
   industry: string;
   type: 'all' | 'internship' | 'full_time' | 'part_time';
   sort_by: 'relevance' | 'date' | 'rating';
+}
+
+// --- User & Favorites Types ---
+
+export interface FavoriteCompanyCreate {
+  company_name: string;
+  alerts_enabled: boolean;
+}
+
+export interface FavoriteCompanyResponse {
+  id: number;
+  company_name: string;
+  alerts_enabled: boolean;
+}
+
+// --- Internal Student Review Types ---
+
+export interface InternalStudentReviewCreate {
+  rating: number;
+  review_text: string;
+  is_internship: boolean;
+  company_name: string;
+}
+
+export interface InternalStudentReviewResponse {
+  id: number;
+  user_id: number;
+  company_name: string;
+  rating: number;
+  review_text: string;
+  is_internship: boolean;
+  created_at: string;
 }

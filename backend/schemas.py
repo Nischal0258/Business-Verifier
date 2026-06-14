@@ -109,6 +109,7 @@ class SocialMediaLinks(BaseModel):
 
 class OpportunityItem(BaseModel):
     """Single internship or job listing."""
+    id: Optional[int] = None
     title: str
     company_name: str
     location: str = "Remote"
