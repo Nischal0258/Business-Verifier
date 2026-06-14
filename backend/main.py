@@ -13,9 +13,15 @@ from config import settings
 from database import init_db, get_db, close_db
 from db_models import FavoriteCompany, InternalStudentReview
 from schemas import ApiResponse, CompanyStudentReport, FavoriteCompanyCreate, FavoriteCompanyResponse, InternalStudentReviewCreate, InternalStudentReviewResponse
-from agents.crew import build_student_report_crew, build_comparator_crew, build_conversational_crew
 from data_engine.student_score import calculate_student_trust_score
 from utils import normalize_company_name
+
+# Optional CrewAI imports
+try:
+    from agents.crew import build_student_report_crew, build_comparator_crew, build_conversational_crew
+    HAS_CREWAI = True
+except ImportError:
+    HAS_CREWAI = False
 
 logging.basicConfig(
     level=logging.INFO,
@@ -181,97 +187,103 @@ async def get_company_reviews(company_name: str, db: AsyncSession = Depends(get_
 
 
 # ------------------------------------------------------------------------------
-# CrewAI Endpoints
+# CrewAI Endpoints (Optional)
 # ------------------------------------------------------------------------------
-@app.post("/api/v1/students/chat", response_model=ApiResponse[dict])
-async def student_chat(query: dict):
-    """Conversational interface powered by CrewAI Crew Manager."""
-    user_query = query.get("query")
-    if not user_query:
-        raise HTTPException(status_code=400, detail="Query is required")
-    try:
-        crew = build_conversational_crew(user_query)
-        result = await asyncio.to_thread(crew.kickoff)
-        return ApiResponse(
-            success=True,
-            data={
-                "response": str(result),
-                "metadata": {
-                    "agents_used": len(crew.agents),
-                    "tasks_completed": len(crew.tasks)
+if HAS_CREWAI:
+    @app.post("/api/v1/students/chat", response_model=ApiResponse[dict])
+    async def student_chat(query: dict):
+        """Conversational interface powered by CrewAI Crew Manager."""
+        user_query = query.get("query")
+        if not user_query:
+            raise HTTPException(status_code=400, detail="Query is required")
+        try:
+            crew = build_conversational_crew(user_query)
+            result = await asyncio.to_thread(crew.kickoff)
+            return ApiResponse(
+                success=True,
+                data={
+                    "response": str(result),
+                    "metadata": {
+                        "agents_used": len(crew.agents),
+                        "tasks_completed": len(crew.tasks)
+                    }
                 }
+            )
+        except Exception as e:
+            logger.error(f"Error in student chat: {e}")
+            import traceback
+            traceback.print_exc()
+            return ApiResponse(
+                success=False,
+                data=None,
+                error=f"Failed to process query: {str(e)}"
+            )
+
+
+    @app.get("/api/v1/students/company/{company_name}", response_model=ApiResponse[CompanyStudentReport])
+    async def get_student_company_report(company_name: str, db: AsyncSession = Depends(get_db)):
+        """Get a student-focused company report with trust score via CrewAI."""
+        if not settings.gemini_api_key:
+            raise HTTPException(status_code=400, detail="Gemini API key not configured")
+        try:
+            crew = build_student_report_crew(company_name)
+            result = await asyncio.to_thread(crew.kickoff)
+            raw_output = str(result)
+            report_data = {
+                "company_name": company_name,
+                "description": raw_output[:1000],
+                "company_history": raw_output[:1500],
+                "is_verified": True,
+                "verification_score": 85,
+                "social_media": {"website": f"https://{company_name.lower().replace(' ', '')}.com"},
+                "opportunities": [],
+                "total_opportunities": 0,
+                "reviews": {},
+                "growth": {"trend": "stable", "description": "Company is performing well"},
+                "agent_execution_log": f"Crew executed {len(crew.tasks)} tasks with {len(crew.agents)} agents"
             }
-        )
-    except Exception as e:
-        logger.error(f"Error in student chat: {e}")
-        import traceback
-        traceback.print_exc()
-        return ApiResponse(
-            success=False,
-            data=None,
-            error=f"Failed to process query: {str(e)}"
-        )
+            trust_score = calculate_student_trust_score(
+                company_data=report_data,
+                opportunities=report_data["opportunities"],
+                social_media=report_data["social_media"],
+                reviews=report_data["reviews"]
+            )
+            report_data["student_trust_score"] = trust_score
+            report_data["verification_score"] = trust_score["total_score"]
+            return ApiResponse(success=True, data=CompanyStudentReport(**report_data))
+        except Exception as e:
+            logger.error(f"Error getting company report: {e}")
+            import traceback
+            traceback.print_exc()
+            return ApiResponse(success=False, data=None, error=f"Agent workflow failed: {str(e)}")
 
 
-@app.get("/api/v1/students/company/{company_name}", response_model=ApiResponse[CompanyStudentReport])
-async def get_student_company_report(company_name: str, db: AsyncSession = Depends(get_db)):
-    """Get a student-focused company report with trust score via CrewAI."""
-    if not settings.gemini_api_key:
-        raise HTTPException(status_code=400, detail="Gemini API key not configured")
-    try:
-        crew = build_student_report_crew(company_name)
-        result = await asyncio.to_thread(crew.kickoff)
-        raw_output = str(result)
-        report_data = {
-            "company_name": company_name,
-            "description": raw_output[:1000],
-            "company_history": raw_output[:1500],
-            "is_verified": True,
-            "verification_score": 85,
-            "social_media": {"website": f"https://{company_name.lower().replace(' ', '')}.com"},
-            "opportunities": [],
-            "total_opportunities": 0,
-            "reviews": {},
-            "growth": {"trend": "stable", "description": "Company is performing well"},
-            "agent_execution_log": f"Crew executed {len(crew.tasks)} tasks with {len(crew.agents)} agents"
-        }
-        trust_score = calculate_student_trust_score(
-            company_data=report_data,
-            opportunities=report_data["opportunities"],
-            social_media=report_data["social_media"],
-            reviews=report_data["reviews"]
-        )
-        report_data["student_trust_score"] = trust_score
-        report_data["verification_score"] = trust_score["total_score"]
-        return ApiResponse(success=True, data=CompanyStudentReport(**report_data))
-    except Exception as e:
-        logger.error(f"Error getting company report: {e}")
-        import traceback
-        traceback.print_exc()
-        return ApiResponse(success=False, data=None, error=f"Agent workflow failed: {str(e)}")
-
-
-@app.get("/api/v1/students/compare", response_model=ApiResponse[dict])
-async def compare_companies(companies: str):
-    """Compare multiple companies side-by-side using CrewAI."""
-    company_list = [c.strip() for c in companies.split(",") if c.strip()]
-    if len(company_list) < 2:
-        raise HTTPException(status_code=400, detail="Provide at least 2 companies to compare")
-    try:
-        crew = build_comparator_crew(company_list)
-        result = await asyncio.to_thread(crew.kickoff)
-        return ApiResponse(
-            success=True,
-            data={
-                "comparison": f"Comparing {len(company_list)} companies: {', '.join(company_list)}",
-                "result": str(result)
-            }
-        )
-    except Exception as e:
-        logger.error(f"Error comparing companies: {e}")
-        import traceback
-        traceback.print_exc()
-        return ApiResponse(success=False, data=None, error=f"Comparison failed: {str(e)}")
+    @app.get("/api/v1/students/compare", response_model=ApiResponse[dict])
+    async def compare_companies(companies: str):
+        """Compare multiple companies side-by-side using CrewAI."""
+        company_list = [c.strip() for c in companies.split(",") if c.strip()]
+        if len(company_list) < 2:
+            raise HTTPException(status_code=400, detail="Provide at least 2 companies to compare")
+        try:
+            crew = build_comparator_crew(company_list)
+            result = await asyncio.to_thread(crew.kickoff)
+            return ApiResponse(
+                success=True,
+                data={
+                    "comparison": f"Comparing {len(company_list)} companies: {', '.join(company_list)}",
+                    "result": str(result)
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error comparing companies: {e}")
+            import traceback
+            traceback.print_exc()
+            return ApiResponse(success=False, data=None, error=f"Comparison failed: {str(e)}")
+else:
+    @app.post("/api/v1/students/chat", response_model=ApiResponse[dict])
+    async def student_chat(query: dict):
+        """Chat without CrewAI"""
+        return ApiResponse(success=False, data=None, error="CrewAI not installed. Please install CrewAI to use chat features.", metadata={"install": "pip install crewai[tools]>=0.11.0"})
 
 
 @app.get("/")
