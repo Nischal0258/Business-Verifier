@@ -189,35 +189,28 @@ async def get_company_reviews(company_name: str, db: AsyncSession = Depends(get_
 # ------------------------------------------------------------------------------
 # CrewAI Endpoints (Optional)
 # ------------------------------------------------------------------------------
-if HAS_CREWAI:
-    @app.post("/api/v1/students/chat", response_model=ApiResponse[dict])
-    async def student_chat(query: dict):
-        """Conversational interface powered by CrewAI Crew Manager."""
-        user_query = query.get("query")
-        if not user_query:
-            raise HTTPException(status_code=400, detail="Query is required")
-        try:
-            crew = build_conversational_crew(user_query)
-            result = await asyncio.to_thread(crew.kickoff)
-            return ApiResponse(
-                success=True,
-                data={
-                    "response": str(result),
-                    "metadata": {
-                        "agents_used": len(crew.agents),
-                        "tasks_completed": len(crew.tasks)
-                    }
-                }
-            )
-        except Exception as e:
-            logger.error(f"Error in student chat: {e}")
-            import traceback
-            traceback.print_exc()
-            return ApiResponse(
-                success=False,
-                data=None,
-                error=f"Failed to process query: {str(e)}"
-            )
+from agents.ai_system_manager_client import kickoff_ai_system_manager
+
+@app.post("/api/v1/students/ai-system-manager", response_model=ApiResponse[dict])
+async def ai_system_manager_chat(payload: dict):
+    """Route AI System Manager crew execution through the microservice."""
+    industry = payload.get("industry")
+    location = payload.get("location")
+    query = payload.get("query")
+    if not industry or not location:
+        raise HTTPException(
+            status_code=400,
+            detail="Both 'industry' and 'location' are required.",
+        )
+    try:
+        result = await kickoff_ai_system_manager(industry=industry, location=location, query=query)
+        return ApiResponse(success=True, data=result)
+    except httpx.HTTPError as e:
+        logger.error(f"AI System Manager service error: {e}")
+        return ApiResponse(success=False, data=None, error=f"AI System Manager unavailable: {e}")
+    except Exception as e:
+        logger.exception("Unexpected error calling AI System Manager")
+        return ApiResponse(success=False, data=None, error=str(e))
 
 
     @app.get("/api/v1/students/company/{company_name}", response_model=ApiResponse[CompanyStudentReport])

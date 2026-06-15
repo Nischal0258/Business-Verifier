@@ -469,16 +469,18 @@ export async function compareCompanies(
    InternIQ v3 — Phase 3/4 API Functions
    ═══════════════════════════════════════════════════════════════════ */
 
-import type {
-  OpportunityItem,
-  SocialMediaLinks,
-  CompanyReviewSummary,
-  FavoriteCompanyCreate,
-  FavoriteCompanyResponse,
-  InternalStudentReviewCreate,
-  InternalStudentReviewResponse,
-} from "@/types/student";
-
+async function callAiSystemManager(
+  industry: string,
+  location: string,
+  query?: string
+): Promise<ApiResponse<any>> {
+  const response = await apiClient.post("/api/v1/students/ai-system-manager", {
+    industry,
+    location,
+    query,
+  });
+  return response.data;
+}
 // --- Students API Functions ---
 
 /**

@@ -22,7 +22,7 @@ langchain-google-genai>=2.0.0
 langchain>=0.3.0
 
 # Optional dependencies (CrewAI - uncomment to use)
-# crewai[tools]>=0.11.0
+ crewai[tools]>=0.11.0
 
 # Testing
 pytest>=7.0.0

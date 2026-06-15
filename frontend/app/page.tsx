@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Send, Loader2, Bot, User, Bell } from "lucide-react";
-import { apiClient } from "@/lib/api";
+import { apiClient, callAiSystemManager } from "@/lib/api";
 
 interface Message {
   id: string;
@@ -12,16 +12,55 @@ interface Message {
 }
 
 export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      role: "assistant",
-      content: "Hi! I'm your AI company research assistant. Ask me anything about companies, trust scores, opportunities, or reviews!",
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Initialize messages on client side only to avoid hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+    setMessages([
+      {
+        id: "1",
+        role: "assistant",
+        content: "Hi! I'm your AI company research assistant. Ask me anything about companies, trust scores, opportunities, or reviews!",
+        timestamp: new Date(),
+      },
+    ]);
+  }, []);
+
+  /**
+   * Naive parser that extracts `industry` and `location` from a free-form
+   * chat message. Looks for the pattern "in <location>" (last occurrence).
+   * Everything before it becomes the industry. Falls back to the whole
+   * message as the industry if no "in <location>" is found.
+   */
+  const parseIndustryAndLocation = (message: string): { industry: string; location: string } => {
+    const m = message.match(/^(.*?)\s+in\s+([A-Za-z][\w\s,.-]+)$/i);
+    if (m) {
+      return { industry: m[1].trim(), location: m[2].trim() };
+    }
+    return { industry: message.trim(), location: "" };
+  };
+
+  /**
+   * Routes a user message to the AI System Manager multi-agent crew.
+   * Requires the message to contain both an industry and a location.
+   */
+  const handleAiSystemManager = async (userMessage: string): Promise<string> => {
+    const { industry, location } = parseIndustryAndLocation(userMessage);
+    if (!industry || !location) {
+      return "Please specify both industry and location, e.g. 'Find AI engineering jobs in Bangalore'.";
+    }
+    try {
+      const res = await callAiSystemManager(industry, location, userMessage);
+      return res.data?.response ?? "AI System Manager returned no result.";
+    } catch (err) {
+      console.error("AI System Manager error:", err);
+      return "The AI System Manager is currently unavailable. Please try again in a moment.";
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,11 +72,18 @@ export default function Home() {
       content: input.trim(),
       timestamp: new Date(),
     };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setIsLoading(true);
-
+try {
+  const aiText = await handleAiSystemManager(userMessage.content);
+  const aiMessage: Message = {
+    id: (Date.now() + 1).toString(),
+    role: "assistant",
+    content: aiText,
+    timestamp: new Date(),
+  };
+  setMessages((prev) => [...prev, aiMessage]);
+} catch (err) {
+  // existing error handling
+}
     try {
       const res = await apiClient.post("/api/v1/students/chat", { query: userMessage.content });
       const aiMessage: Message = {
