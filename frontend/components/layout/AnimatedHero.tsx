@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import { useRef, useState, useCallback, useEffect } from "react";
-import { ArrowRight, X, Mail, Lock, User, Eye, EyeOff, ShieldCheck, Play } from "lucide-react";
+import { ArrowRight, X, Mail, Lock, User, Eye, EyeOff, ShieldCheck, Play, MapPin, Search } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { useAuth } from "@/lib/auth-context";
@@ -488,20 +488,43 @@ export default function AnimatedHero({ onSearch }: AnimatedHeroProps) {
               Instant verification, risk assessment, and financial deep-dives.
             </motion.p>
 
-            {/* CTA Buttons */}
+            {/* Job Search Bar (Indeed Style) */}
             <motion.div
               initial={{ opacity: 0, y: 20, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.7, delay: 0.8, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-              className="flex items-center justify-center gap-4"
+              transition={{ duration: 0.7, delay: 0.8, ease: [0.16, 1, 0.3, 1] }}
+              className="mt-8 w-full max-w-3xl mx-auto"
             >
-              <button
-                onClick={() => setAuthMode("signup")}
-                className="glass-nav flex items-center gap-3 py-4 px-8 rounded-xl text-base font-semibold transition-all duration-300"
+              <form 
+                action="/jobs"
+                className="flex flex-col sm:flex-row items-center bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-2 gap-2 shadow-2xl"
               >
-                <span>Get Started Free</span>
-                <ArrowRight className="w-4 h-4 flex-shrink-0" />
-              </button>
+                <div className="flex-1 flex items-center px-4 w-full h-14">
+                  <Search className="w-5 h-5 text-white/50 mr-3 flex-shrink-0" />
+                  <input 
+                    name="q"
+                    type="text" 
+                    placeholder="Job title, keywords, or company" 
+                    className="w-full bg-transparent border-none outline-none text-white placeholder-white/50 h-full text-base font-medium"
+                  />
+                </div>
+                <div className="hidden sm:block w-px h-8 bg-white/10" />
+                <div className="flex-1 flex items-center px-4 w-full h-14 border-t sm:border-t-0 border-white/10">
+                  <MapPin className="w-5 h-5 text-white/50 mr-3 flex-shrink-0" />
+                  <input 
+                    name="loc"
+                    type="text" 
+                    placeholder="City, state, or 'Remote'" 
+                    className="w-full bg-transparent border-none outline-none text-white placeholder-white/50 h-full text-base font-medium"
+                  />
+                </div>
+                <button 
+                  type="submit"
+                  className="w-full sm:w-auto px-8 h-14 bg-[#A855F7] hover:bg-[#9333EA] text-white rounded-xl font-bold transition-colors flex items-center justify-center whitespace-nowrap shadow-lg shadow-[#A855F7]/25"
+                >
+                  Find Jobs
+                </button>
+              </form>
             </motion.div>
 
             {/* Trust indicators */}

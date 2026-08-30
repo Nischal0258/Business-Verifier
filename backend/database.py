@@ -12,6 +12,8 @@ engine = create_async_engine(
     future=True
 )
 
+from contextlib import asynccontextmanager
+
 # Create async session factory
 AsyncSessionLocal = async_sessionmaker(
     engine,
@@ -20,6 +22,19 @@ AsyncSessionLocal = async_sessionmaker(
     autocommit=False,
     autoflush=False
 )
+
+# Export aliases for background tasks and lifespan events
+async_session_factory = AsyncSessionLocal
+
+@asynccontextmanager
+async def get_db_session():
+    """Context manager for database sessions outside of FastAPI request lifecycle."""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+
 
 
 async def init_db():

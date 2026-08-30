@@ -1,0 +1,120 @@
+---
+user_profile_system_with_personalized_job_matching:
+  description: Design and implement a comprehensive user onboarding and profile system
+    with advanced personalization capabilities for job seekers across India. Create
+    the enhanced three-path onboarding flow with detailed skills assessment, multi-location
+    preferences, salary expectations with city-specific cost-of-living adjustments,
+    and career progression goals. Implement intelligent job matching algorithms that
+    provide personalized recommendations based on user profiles, salary benchmarking
+    for user's experience level and preferred locations, career advancement suggestions,
+    skills gap analysis with recommended learning paths, and personalized networking
+    strategies tailored to the user's background and aspirations in {industry} sector
+    and preferred Indian cities.
+  expected_output: 'Advanced personalized job platform system including: comprehensive
+    user onboarding with skills assessment, detailed profile questionnaires with multi-location
+    preferences, personalized job recommendation engine, salary benchmarking system
+    adjusted for different Indian cities, career progression pathway suggestions,
+    skills gap analysis with learning recommendations, personalized networking strategies,
+    location-preference matching system, experience-level appropriate job filtering,
+    cost-of-living salary adjustments for preferred cities, and intelligent matching
+    algorithms that continuously improve recommendations based on user behavior and
+    preferences.'
+  agent: user_profile_manager_personalization_specialist
+phase_1_direct_company_partnership_development:
+  description: Execute immediate direct company outreach strategy for {industry} sector
+    in {location}. Identify top 20 companies hiring in the sector, research HR decision-makers,
+    find direct contact information, create compelling partnership proposals, and
+    establish initial relationships. Develop company partnership templates, pricing
+    models for job posting services, and value propositions that differentiate us
+    from competitors like Naukri and LinkedIn. Focus on building exclusive partnerships
+    that give us direct access to company job openings.
+  expected_output: 'Direct company partnership strategy featuring: target company
+    list with contact details, HR decision-maker profiles, partnership proposal templates,
+    value proposition presentations, pricing models for job posting services, exclusive
+    partnership agreements templates, and immediate outreach action plan with email
+    templates and follow-up sequences.'
+  agent: company_partnership_direct_sourcing_specialist
+direct_company_job_research:
+  description: Research jobs by connecting directly to company sources - official
+    career pages, company LinkedIn posts, company websites. AVOID competitor job sites
+    (Naukri.com, Glassdoor, Monster, Indeed). Find specific company hiring announcements,
+    official job postings, salary information from company sources, and application
+    methods through company channels. Focus on creating unique value by aggregating
+    information directly from source companies that users cannot find on competitor
+    platforms.
+  expected_output: 'Unique company-direct job listings featuring: official company
+    job postings, company career page links, direct application pathways, company-published
+    salary ranges, hiring manager contacts, company culture insights from official
+    sources, and networking opportunities through official company channels. NO competitor
+    job site links - only direct company sources that create unique platform value.'
+  agent: direct_company_job_researcher
+  context:
+  - user_profile_system_with_personalized_job_matching
+phase_2_hr_system_api_integration_architecture:
+  description: Design comprehensive technical integration strategy for {industry}
+    companies in {location}. Research major ATS systems used by target companies (Workday,
+    BambooHR, Greenhouse, Lever, etc.), identify API integration opportunities, create
+    technical specifications for bi-directional job data flow, design application
+    pipeline architecture, and develop integration roadmap. Focus on creating seamless
+    application experience where users apply through our platform but data flows directly
+    to company systems.
+  expected_output: 'Technical integration blueprint featuring: ATS platform analysis
+    for target companies, API integration specifications, technical architecture diagrams,
+    data flow documentation, integration timeline and milestones, required development
+    resources, technical partnership opportunities with HR tech vendors, and implementation
+    roadmap with technical requirements and cost estimates.'
+  agent: technical_integration_api_specialist
+  context:
+  - phase_1_direct_company_partnership_development
+company_intelligence_official_source_analysis:
+  description: Research company intelligence using ONLY official company sources -
+    company websites, LinkedIn company pages, official social media accounts, company
+    blogs, press releases, leadership posts. AVOID competitor review sites (Glassdoor,
+    AmbitionBox, Indeed reviews). Create proprietary company intelligence by analyzing
+    official company communications, leadership content, company values pages, official
+    announcements, and company-published culture content. Build unique company profiles
+    that differentiate our platform.
+  expected_output: 'Proprietary company intelligence featuring: official company culture
+    insights from company sources, leadership team information from official profiles,
+    company values and mission from official pages, recent company announcements and
+    growth updates, official employee testimonials from company channels, and networking
+    pathways through official company contacts. NO third-party review links - only
+    official company intelligence that provides unique platform value.'
+  agent: company_intelligence_direct_source_specialist
+  context:
+  - direct_company_job_research
+phase_3_ai_powered_smart_automation_system:
+  description: Develop advanced automation and AI systems for {industry} job sourcing
+    in {location}. Design ethical job sourcing automation that monitors company career
+    pages, create AI-powered job matching algorithms, develop personalized recommendation
+    engines, implement smart candidate-job matching, and build predictive analytics
+    for hiring trends. Focus on creating intelligent automation that provides competitive
+    advantages through superior matching and user experience while maintaining ethical
+    data practices.
+  expected_output: 'AI automation system blueprint featuring: ethical job sourcing
+    automation specifications, AI matching algorithm designs, personalized recommendation
+    engine architecture, predictive analytics implementation, machine learning model
+    specifications, data collection and processing pipelines, user experience enhancement
+    features, competitive advantage analysis, and technical implementation roadmap
+    with AI/ML requirements and ethical guidelines.'
+  agent: ai_powered_automation_smart_sourcing_engineer
+  context:
+  - phase_1_direct_company_partnership_development
+  - phase_2_hr_system_api_integration_architecture
+final_platform_integration_launch_strategy:
+  description: Consolidate all Phase 1-3 outputs into a comprehensive platform launch
+    strategy for {industry} sector in {location}. Integrate direct company partnerships,
+    technical integrations, AI automation, user personalization, and company intelligence
+    into a unified platform roadmap. Create implementation timeline, resource allocation
+    plan, and go-to-market strategy that combines all developed components into a
+    competitive job platform ready for launch.
+  expected_output: 'Complete platform launch blueprint featuring: unified implementation
+    roadmap integrating all phases, technical architecture combining company partnerships
+    + API integrations + AI automation, comprehensive user experience flow, competitive
+    advantage summary, resource allocation and timeline, go-to-market strategy, revenue
+    model specifications, and presentation-ready platform overview with key differentiators
+    and implementation milestones.'
+  agent: user_profile_manager_personalization_specialist
+  context:
+  - company_intelligence_official_source_analysis
+  - phase_3_ai_powered_smart_automation_system

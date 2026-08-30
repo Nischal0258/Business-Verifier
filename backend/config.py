@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     serper_api_key: str = ""
     alpha_vantage_api_key: str = ""
     finnhub_api_key: str = ""
+    nvidia_api_key: str = ""
+    groq_api_key: str = ""
     cors_origins: Union[List[str], str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001"]
     database_url: str = ""
 
@@ -27,6 +29,8 @@ class Settings(BaseSettings):
         log.info(f"SERPER_API_KEY: {'set' if self.serper_api_key else 'NOT set'}")
         log.info(f"ALPHA_VANTAGE_API_KEY: {'set' if self.alpha_vantage_api_key else 'NOT set'}")
         log.info(f"FINNHUB_API_KEY: {'set' if self.finnhub_api_key else 'NOT set'}")
+        log.info(f"NVIDIA_API_KEY: {'set' if self.nvidia_api_key else 'NOT set'}")
+        log.info(f"GROQ_API_KEY: {'set' if self.groq_api_key else 'NOT set'}")
 
         if isinstance(self.cors_origins, str):
             self.cors_origins = [origin.strip() for origin in self.cors_origins.split(",")]

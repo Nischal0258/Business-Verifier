@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Student Trust Report - {{ company_name }}</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 40px; color: #333; line-height: 1.6; }
+        .header { border-bottom: 2px solid #2ecc71; padding-bottom: 20px; margin-bottom: 30px; }
+        .title { font-size: 28px; font-weight: bold; margin: 0; color: #2c3e50; }
+        .subtitle { font-size: 16px; color: #7f8c8d; margin-top: 5px; }
+        
+        .score-box { background-color: #f8f9fa; border-left: 5px solid #2ecc71; padding: 20px; margin-bottom: 30px; }
+        .score-title { font-size: 20px; font-weight: bold; margin-bottom: 10px; }
+        .score-value { font-size: 36px; font-weight: bold; color: #27ae60; }
+        
+        .section { margin-bottom: 30px; }
+        .section-title { font-size: 20px; font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; color: #2980b9; }
+        
+        .opportunity { background-color: #fdfefe; border: 1px solid #eee; padding: 15px; margin-bottom: 15px; border-radius: 5px; }
+        .opp-title { font-weight: bold; font-size: 16px; margin: 0 0 5px 0; color: #34495e; }
+        .opp-details { font-size: 14px; color: #7f8c8d; }
+        
+        .reviews-box { background-color: #fcf3cf; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        
+        .footer { font-size: 12px; color: #95a5a6; border-top: 1px solid #eee; padding-top: 20px; text-align: center; margin-top: 50px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1 class="title">{{ company_name }}</h1>
+        <div class="subtitle">{{ industry }} | Verification Status: {% if is_verified %}<span style="color: #27ae60; font-weight: bold;">Verified</span>{% else %}<span style="color: #e74c3c; font-weight: bold;">Unverified</span>{% endif %}</div>
+    </div>
+
+    <div class="score-box">
+        <div class="score-title">Student Trust Score</div>
+        <div>
+            <span class="score-value">{{ student_trust_score.get('total_score', 'N/A') }}/100</span>
+            <span style="margin-left: 15px; font-size: 18px;">Tier: <strong>{{ student_trust_score.get('company_tier', 'Unknown').replace('_', ' ').title() }}</strong></span>
+        </div>
+        <p style="margin-top: 10px; font-size: 14px;">{{ student_trust_score.get('verdict', '') }}</p>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Company Overview</div>
+        <p>{{ description }}</p>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Opportunities (Internships & Jobs)</div>
+        {% if opportunities and opportunities|length > 0 %}
+            {% for opp in opportunities %}
+            <div class="opportunity">
+                <h3 class="opp-title">{{ opp.title }}</h3>
+                <div class="opp-details">
+                    <strong>Type:</strong> {{ opp.type | capitalize }} | 
+                    <strong>Location:</strong> {{ opp.location }} <br>
+                    {% if opp.stipend %}<strong>Stipend:</strong> {{ opp.stipend }}<br>{% endif %}
+                    {% if opp.apply_url %}<a href="{{ opp.apply_url }}" style="color: #3498db; text-decoration: none;">View Posting</a>{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p>No currently active internships or jobs found.</p>
+        {% endif %}
+    </div>
+
+    <div class="section">
+        <div class="section-title">Work Culture & Reviews</div>
+        <div class="reviews-box">
+            <p><strong>Overall Rating:</strong> {{ reviews.get('overall_rating', 'N/A') }} / 5.0 (Based on {{ reviews.get('review_count', 0) }} reviews)</p>
+            <p><strong>Student Verdict:</strong> {{ reviews.get('student_verdict', 'No verdict available.') }}</p>
+        </div>
+        
+        {% if reviews.get('top_pros') %}
+        <h4>Top Pros</h4>
+        <ul>
+            {% for pro in reviews.top_pros %}
+            <li>{{ pro }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        
+        {% if reviews.get('top_cons') %}
+        <h4>Top Cons</h4>
+        <ul>
+            {% for con in reviews.top_cons %}
+            <li>{{ con }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <div class="section">
+        <div class="section-title">Social Media Presence</div>
+        <ul>
+            {% if social_media.get('linkedin_url') %}<li><a href="{{ social_media.linkedin_url }}">LinkedIn</a></li>{% endif %}
+            {% if social_media.get('instagram_url') %}<li><a href="{{ social_media.instagram_url }}">Instagram</a></li>{% endif %}
+            {% if social_media.get('twitter_url') %}<li><a href="{{ social_media.twitter_url }}">Twitter/X</a></li>{% endif %}
+            {% if social_media.get('facebook_url') %}<li><a href="{{ social_media.facebook_url }}">Facebook</a></li>{% endif %}
+            {% if not social_media.get('linkedin_url') and not social_media.get('instagram_url') %}
+                <li>Minimal social presence detected.</li>
+            {% endif %}
+        </ul>
+    </div>
+
+    <div class="footer">
+        Generated by Business Verification & Analytics Engine on {{ generated_at }}<br>
+        This report is generated using AI analysis of publicly available web data and may contain inaccuracies.
+    </div>
+
+</body>
+</html>

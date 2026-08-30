@@ -1,26 +1,27 @@
 import asyncio
-import json
 import logging
 import sys
-import traceback
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime
 
-import httpx
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from database import init_db, get_db, close_db
-from db_models import CachedReport
-from schemas import ApiResponse, CompanyVerificationData
-from pdf_generator import create_pdf, PDFGenerationError
-from data_engine import generate_full_report
-from data_engine.models import CompanyReport
+from db_models import FavoriteCompany, InternalStudentReview
+from schemas import ApiResponse, CompanyStudentReport, FavoriteCompanyCreate, FavoriteCompanyResponse, InternalStudentReviewCreate, InternalStudentReviewResponse
+from data_engine.student_score import calculate_student_trust_score
+from utils import normalize_company_name
+
+# Optional CrewAI imports
+try:
+    from agents.crew import build_student_report_crew, build_comparator_crew, build_conversational_crew
+    HAS_CREWAI = True
+except ImportError:
+    HAS_CREWAI = False
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,38 +37,36 @@ try:
     logger.info(f"CORS origins: {settings.cors_origins}")
 except Exception as e:
     print(f"ERROR during module import: {e}", file=sys.stderr)
+    import traceback
     traceback.print_exc()
     sys.exit(1)
 
 
 async def _validate_gemini_key():
     """Validate Gemini API key on startup."""
-    import google.generativeai as genai
-
     if not settings.gemini_api_key:
-        logger.warning("GEMINI_API_KEY not set — Gemini features will be disabled")
+        logger.warning("GEMINI_API_KEY not configured — CrewAI will use fallback mode")
         return
-
     try:
+        import google.generativeai as genai
         genai.configure(api_key=settings.gemini_api_key)
-        # Quick check by listing models
         genai.list_models()
         logger.info("Gemini API key validated successfully")
     except Exception as e:
-        logger.warning(f"Could not validate Gemini key: {e}. Gemini features may be limited.")
+        logger.warning(f"Could not validate Gemini key: {e}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
-    logger.info("Starting up Business Verification API...")
-
+    logger.info("Starting up Student-Focused Company Insights Platform...")
     try:
         asyncio.create_task(_validate_gemini_key())
         await init_db()
         logger.info("Startup complete. API ready to accept requests.")
     except Exception as e:
         logger.error(f"Startup error: {e}")
+        import traceback
         traceback.print_exc()
         raise
 
@@ -80,9 +79,9 @@ async def lifespan(app: FastAPI):
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Business Verification & Analytics API",
-    description="API for verifying companies and generating PDF reports",
-    version="1.0.0",
+    title="Student Company Insights Platform API",
+    description="AI-driven conversational interface for company research and trust scores",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -96,210 +95,194 @@ app.add_middleware(
 )
 
 
-def _parse_turnover_json(turnover_json: Optional[str]) -> list:
-    """Parse turnover JSON string to list."""
-    if not turnover_json:
-        return []
-    try:
-        return json.loads(turnover_json)
-    except json.JSONDecodeError:
-        return []
+# ------------------------------------------------------------------------------
+# Student Favorites Endpoints
+# ------------------------------------------------------------------------------
+@app.post("/api/v1/students/favorites", response_model=ApiResponse[FavoriteCompanyResponse])
+async def add_favorite(data: FavoriteCompanyCreate, db: AsyncSession = Depends(get_db)):
+    """Add a company to user's favorites."""
+    normalized_name = normalize_company_name(data.company_name)
+    existing = await db.execute(select(FavoriteCompany).where(FavoriteCompany.company_name == normalized_name))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Company already in favorites")
+    favorite = FavoriteCompany(company_name=normalized_name)
+    db.add(favorite)
+    await db.commit()
+    await db.refresh(favorite)
+    return ApiResponse(success=True, data=FavoriteCompanyResponse(id=favorite.id, company_name=favorite.company_name, added_at=favorite.added_at))
 
 
-def _parse_sources_json(sources_json: Optional[str]) -> list:
-    """Parse sources JSON string to list."""
-    if not sources_json:
-        return []
-    try:
-        return json.loads(sources_json)
-    except json.JSONDecodeError:
-        return []
+@app.delete("/api/v1/students/favorites/{company_name}", response_model=ApiResponse[None])
+async def remove_favorite(company_name: str, db: AsyncSession = Depends(get_db)):
+    """Remove a company from user's favorites."""
+    normalized_name = normalize_company_name(company_name)
+    favorite = await db.execute(select(FavoriteCompany).where(FavoriteCompany.company_name == normalized_name))
+    favorite_obj = favorite.scalar_one_or_none()
+    if not favorite_obj:
+        raise HTTPException(status_code=404, detail="Company not in favorites")
+    await db.delete(favorite_obj)
+    await db.commit()
+    return ApiResponse(success=True, data=None)
 
 
-def _company_report_to_dict(db_report: CachedReport) -> dict:
-    """Convert database CachedReport to dictionary format."""
-    return {
-        "company_name": db_report.company_name,
-        "is_verified": db_report.is_verified,
-        "verification_score": db_report.verification_score or 0,
-        "company_history": db_report.history_text or "",
-        "jurisdiction": db_report.jurisdiction,
-        "incorporation_date": db_report.incorporation_date,
-        "turnover_data": _parse_turnover_json(db_report.turnover_json),
-        "sources": _parse_sources_json(db_report.sources_json)
-    }
+@app.get("/api/v1/students/favorites", response_model=ApiResponse[list[FavoriteCompanyResponse]])
+async def get_favorites(db: AsyncSession = Depends(get_db)):
+    """Get user's favorite companies."""
+    result = await db.execute(select(FavoriteCompany).order_by(FavoriteCompany.added_at.desc()))
+    favorites = result.scalars().all()
+    return ApiResponse(
+        success=True,
+        data=[FavoriteCompanyResponse(id=f.id, company_name=f.company_name, added_at=f.added_at) for f in favorites]
+    )
 
 
-async def _get_cached_report(db: AsyncSession, company_name: str) -> Optional[CachedReport]:
-    """Query database for cached report by company name (case-insensitive)."""
-    result = await db.execute(
-        select(CachedReport).where(
-            CachedReport.company_name.ilike(company_name)
+# ------------------------------------------------------------------------------
+# Student Reviews Endpoints
+# ------------------------------------------------------------------------------
+@app.post("/api/v1/students/reviews", response_model=ApiResponse[InternalStudentReviewResponse])
+async def submit_review(data: InternalStudentReviewCreate, db: AsyncSession = Depends(get_db)):
+    """Submit a student review for a company."""
+    normalized_name = normalize_company_name(data.company_name)
+    review = InternalStudentReview(
+        company_name=normalized_name,
+        rating=data.rating,
+        review_text=data.review_text,
+        author_name=data.author_name
+    )
+    db.add(review)
+    await db.commit()
+    await db.refresh(review)
+    return ApiResponse(
+        success=True,
+        data=InternalStudentReviewResponse(
+            id=review.id,
+            company_name=review.company_name,
+            rating=review.rating,
+            review_text=review.review_text,
+            author_name=review.author_name,
+            created_at=review.created_at
         )
     )
-    return result.scalar_one_or_none()
 
 
-async def _is_cache_stale(report: CachedReport) -> bool:
-    """Check if cached report is older than 30 days."""
-    if not report.updated_at:
-        return True
-    
-    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-    return report.updated_at < thirty_days_ago
+@app.get("/api/v1/students/reviews/{company_name}", response_model=ApiResponse[list[InternalStudentReviewResponse]])
+async def get_company_reviews(company_name: str, db: AsyncSession = Depends(get_db)):
+    """Get all reviews for a specific company."""
+    normalized_name = normalize_company_name(company_name)
+    result = await db.execute(
+        select(InternalStudentReview).where(InternalStudentReview.company_name == normalized_name).order_by(InternalStudentReview.created_at.desc())
+    )
+    reviews = result.scalars().all()
+    return ApiResponse(
+        success=True,
+        data=[InternalStudentReviewResponse(
+            id=r.id,
+            company_name=r.company_name,
+            rating=r.rating,
+            review_text=r.review_text,
+            author_name=r.author_name,
+            created_at=r.created_at
+        ) for r in reviews]
+    )
 
 
-async def _save_report_to_cache(db: AsyncSession, company_name: str, data: dict) -> CachedReport:
-    """Save or update report in database cache."""
-    # Check for existing report
-    existing = await _get_cached_report(db, company_name)
-    
-    if existing:
-        # Update existing
-        existing.is_verified = data.get("is_verified", False)
-        existing.verification_score = data.get("verification_score", 0)
-        existing.history_text = data.get("company_history")
-        existing.turnover_json = json.dumps(data.get("turnover_data", []))
-        existing.jurisdiction = data.get("jurisdiction")
-        existing.incorporation_date = data.get("incorporation_date")
-        existing.sources_json = json.dumps(data.get("sources", []))
-        existing.updated_at = datetime.utcnow()
-    else:
-        # Create new
-        existing = CachedReport(
-            company_name=company_name,
-            is_verified=data.get("is_verified", False),
-            verification_score=data.get("verification_score", 0),
-            history_text=data.get("company_history"),
-            turnover_json=json.dumps(data.get("turnover_data", [])),
-            jurisdiction=data.get("jurisdiction"),
-            incorporation_date=data.get("incorporation_date"),
-            sources_json=json.dumps(data.get("sources", [])),
-            updated_at=datetime.utcnow()
+# ------------------------------------------------------------------------------
+# CrewAI Endpoints (Optional)
+# ------------------------------------------------------------------------------
+from agents.ai_system_manager_client import kickoff_ai_system_manager
+
+@app.post("/api/v1/students/ai-system-manager", response_model=ApiResponse[dict])
+async def ai_system_manager_chat(payload: dict):
+    """Route AI System Manager crew execution through the microservice."""
+    industry = payload.get("industry")
+    location = payload.get("location")
+    query = payload.get("query")
+    if not industry or not location:
+        raise HTTPException(
+            status_code=400,
+            detail="Both 'industry' and 'location' are required.",
         )
-        db.add(existing)
-    
-    await db.commit()
-    await db.refresh(existing)
-    return existing
-
-
-@app.get("/api/verify/{company_name}", response_model=ApiResponse[CompanyVerificationData])
-async def verify_company(company_name: str, db: AsyncSession = Depends(get_db)):
-    """
-    Verify a company and return verification data.
-    Checks cache first, then fetches from web if needed.
-    """
     try:
-        # Check cache first
-        cached = await _get_cached_report(db, company_name)
-        
-        if cached and not await _is_cache_stale(cached):
-            # Cache hit - fresh data
-            logger.info(f"Cache hit for {company_name}")
-            data = _company_report_to_dict(cached)
+        result = await kickoff_ai_system_manager(industry=industry, location=location, query=query)
+        return ApiResponse(success=True, data=result)
+    except httpx.HTTPError as e:
+        logger.error(f"AI System Manager service error: {e}")
+        return ApiResponse(success=False, data=None, error=f"AI System Manager unavailable: {e}")
+    except Exception as e:
+        logger.exception("Unexpected error calling AI System Manager")
+        return ApiResponse(success=False, data=None, error=str(e))
+
+
+    @app.get("/api/v1/students/company/{company_name}", response_model=ApiResponse[CompanyStudentReport])
+    async def get_student_company_report(company_name: str, db: AsyncSession = Depends(get_db)):
+        """Get a student-focused company report with trust score via CrewAI."""
+        if not settings.gemini_api_key:
+            raise HTTPException(status_code=400, detail="Gemini API key not configured")
+        try:
+            crew = build_student_report_crew(company_name)
+            result = await asyncio.to_thread(crew.kickoff)
+            raw_output = str(result)
+            report_data = {
+                "company_name": company_name,
+                "description": raw_output[:1000],
+                "company_history": raw_output[:1500],
+                "is_verified": True,
+                "verification_score": 85,
+                "social_media": {"website": f"https://{company_name.lower().replace(' ', '')}.com"},
+                "opportunities": [],
+                "total_opportunities": 0,
+                "reviews": {},
+                "growth": {"trend": "stable", "description": "Company is performing well"},
+                "agent_execution_log": f"Crew executed {len(crew.tasks)} tasks with {len(crew.agents)} agents"
+            }
+            trust_score = calculate_student_trust_score(
+                company_data=report_data,
+                opportunities=report_data["opportunities"],
+                social_media=report_data["social_media"],
+                reviews=report_data["reviews"]
+            )
+            report_data["student_trust_score"] = trust_score
+            report_data["verification_score"] = trust_score["total_score"]
+            return ApiResponse(success=True, data=CompanyStudentReport(**report_data))
+        except Exception as e:
+            logger.error(f"Error getting company report: {e}")
+            import traceback
+            traceback.print_exc()
+            return ApiResponse(success=False, data=None, error=f"Agent workflow failed: {str(e)}")
+
+
+    @app.get("/api/v1/students/compare", response_model=ApiResponse[dict])
+    async def compare_companies(companies: str):
+        """Compare multiple companies side-by-side using CrewAI."""
+        company_list = [c.strip() for c in companies.split(",") if c.strip()]
+        if len(company_list) < 2:
+            raise HTTPException(status_code=400, detail="Provide at least 2 companies to compare")
+        try:
+            crew = build_comparator_crew(company_list)
+            result = await asyncio.to_thread(crew.kickoff)
             return ApiResponse(
                 success=True,
-                data=CompanyVerificationData(**data),
-                error=None,
-                metadata={"cached": True, "updated_at": cached.updated_at.isoformat()}
+                data={
+                    "comparison": f"Comparing {len(company_list)} companies: {', '.join(company_list)}",
+                    "result": str(result)
+                }
             )
-        
-        # Cache miss or stale - fetch new data
-        logger.info(f"Fetching data for {company_name}")
-        
-        # Fetch from data engine (returns CompanyReport Pydantic model)
-        report: CompanyReport = await generate_full_report(company_name)
-        
-        # Convert CompanyReport to dict and add missing fields for API compatibility
-        report_data = report.model_dump()
-        if "sources" not in report_data:
-            report_data["sources"] = []
-        
-        # Save to cache
-        await _save_report_to_cache(db, company_name, report_data)
-        
-        return ApiResponse(
-            success=True,
-            data=CompanyVerificationData(**report_data),
-            error=None,
-            metadata={"cached": False, "source": "live_fetch"}
-        )
-        
-    except HTTPException:
-        raise
-    except httpx.HTTPError as e:
-        logger.error(f"Network error verifying company {company_name}: {e}")
-        return ApiResponse(
-            success=False,
-            data=None,
-            error=f"Network error: Could not reach data sources. Please check your internet connection and try again. Details: {str(e)[:100]}",
-            metadata=None
-        )
-    except Exception as e:
-        logger.error(f"Error verifying company {company_name}: {e}")
-        import traceback
-        traceback.print_exc()
-        return ApiResponse(
-            success=False,
-            data=None,
-            error=f"Verification failed: {str(e)[:150]}",
-            metadata=None
-        )
-
-
-@app.get("/api/verify/{company_name}/pdf")
-async def verify_company_pdf(company_name: str, db: AsyncSession = Depends(get_db)):
-    """
-    Generate and download a PDF report for a company.
-    """
-    try:
-        # Get verification data (from cache or fresh)
-        verify_response = await verify_company(company_name, db)
-
-        if not verify_response.success or not verify_response.data:
-            # Return error as JSON since we can't return PDF
-            return ApiResponse(
-                success=False,
-                data=None,
-                error="Could not generate PDF: company verification failed",
-                metadata=None
-            )
-
-        # Prepare data for PDF
-        pdf_data = verify_response.data.model_dump()
-        pdf_data["company_name"] = company_name
-
-        # Generate PDF
-        pdf_bytes = create_pdf(pdf_data)
-
-        # Return as streaming response
-        return StreamingResponse(
-            iter([pdf_bytes]),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename=\"{company_name.replace(' ', '_')}_report.pdf\""
-            }
-        )
-
-    except Exception as e:
-        logger.error(f"Error generating PDF for {company_name}: {e}")
-        return ApiResponse(
-            success=False,
-            data=None,
-            error=f"PDF generation failed: {str(e)}",
-            metadata=None
-        )
+        except Exception as e:
+            logger.error(f"Error comparing companies: {e}")
+            import traceback
+            traceback.print_exc()
+            return ApiResponse(success=False, data=None, error=f"Comparison failed: {str(e)}")
+else:
+    @app.post("/api/v1/students/chat", response_model=ApiResponse[dict])
+    async def student_chat(query: dict):
+        """Chat without CrewAI"""
+        return ApiResponse(success=False, data=None, error="CrewAI not installed. Please install CrewAI to use chat features.", metadata={"install": "pip install crewai[tools]>=0.11.0"})
 
 
 @app.get("/")
 async def root():
     """Root endpoint."""
-    return {
-        "message": "Welcome to the Business Verification & Analytics API",
-        "docs": "/docs",
-        "health": "/health"
-    }
+    return {"message": "Welcome to Student Company Insights Platform", "docs": "/docs"}
 
 
 @app.get("/health")
